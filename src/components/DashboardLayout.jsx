@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { useGlobalStore } from '../store/useGlobalStore';
-import { Activity, Server, ActivitySquare, Network, PowerSquare, X } from 'lucide-react';
+import { Activity, Server, CreditCard, ShieldAlert, PowerSquare, X } from 'lucide-react';
 
 export default function DashboardLayout({ children }) {
   const { 
@@ -16,7 +16,8 @@ export default function DashboardLayout({ children }) {
   const navItems = [
     { path: '/executive-overview', label: 'Overview', icon: Activity },
     { path: '/app-reliability', label: 'App Reliability', icon: Server },
-    { path: '/it-ot-health', label: 'IT-to-OT Health', icon: ActivitySquare },
+    { path: '/licensing-subs', label: 'Licensing & Subs', icon: CreditCard },
+    { path: '/security', label: 'Security', icon: ShieldAlert },
     { path: '/change-impact', label: 'Change Impact', icon: PowerSquare },
   ];
 

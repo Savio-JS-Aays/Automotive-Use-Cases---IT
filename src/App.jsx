@@ -4,22 +4,24 @@ import DashboardLayout from './components/DashboardLayout';
 import ExecutiveOverview from './modules/ExecutiveOverview';
 import AppReliability from './modules/AppReliability';
 import ChangeImpact from './modules/ChangeImpact';
-import ITtoOTHealth from './modules/ITtoOTHealth';
+import LicensingAndSubs from './modules/LicensingAndSubs';
+import Security from './modules/Security';
 
 function App() {
   return (
     <Router>
       <DashboardLayout>
         <Routes>
+          {/* Redirect root to your primary executive module */}
           <Route path="/" element={<Navigate to="/executive-overview" replace />} />
           
           <Route path="/executive-overview" element={<ExecutiveOverview />} />
           <Route path="/app-reliability" element={<AppReliability />} />
+          <Route path="/licensing-subs" element={<LicensingAndSubs />} />
+          <Route path="/security" element={<Security />} />
           <Route path="/change-impact" element={<ChangeImpact />} />
           
-          {/* FIXED: Removed the extra "-to-" to match the layout navigation */}
-          <Route path="/it-ot-health" element={<ITtoOTHealth />} />
-          
+          {/* Catch-all fallback */}
           <Route path="*" element={<Navigate to="/executive-overview" replace />} />
         </Routes>
       </DashboardLayout>
