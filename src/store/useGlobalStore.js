@@ -1,11 +1,8 @@
 import { create } from 'zustand';
 
+// Global sidebar filters. dateRange is a rolling window ending at the as-of date (it_config); regionId is 'All' or a dim_region id.
 export const useGlobalStore = create((set) => ({
-  dateRange: 'Last 7 Days',
+  dateRange: 'Last 30 Days',
   regionId: 'All',
-  modelId: 'All',
-  selectedAssetId: null,
   setGlobalFilter: (key, value) => set({ [key]: value }),
-  selectAsset: (id) => set({ selectedAssetId: id }),
-  clearAsset: () => set({ selectedAssetId: null }),
 }));
