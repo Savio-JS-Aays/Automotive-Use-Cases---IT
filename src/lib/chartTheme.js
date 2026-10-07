@@ -40,3 +40,6 @@ export const AVAILABILITY_BUCKETS = [
   { min: -1, color: '#9a3412', label: '< 98%' },
 ];
 export const availabilityColor = (v) => AVAILABILITY_BUCKETS.find((b) => v >= b.min).color;
+
+// Incident priority colours (P1 critical → P4 neutral); always shown with the P1–P4 label
+export const PRIORITY_COLOR = { 1: STATUS.critical, 2: STATUS.serious, 3: STATUS.warning, 4: '#b8b6ac' };

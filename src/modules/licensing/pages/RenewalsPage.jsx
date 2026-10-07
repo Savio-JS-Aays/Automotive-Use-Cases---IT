@@ -1,43 +1,62 @@
 import { useMemo, useState } from 'react';
-import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { AlarmClock, CalendarClock, FilePen, Repeat, TrendingUp } from 'lucide-react';
 import KpiCard from '../../../components/KpiCard';
 import Panel from '../../../components/Panel';
+import Segmented from '../../../components/Segmented';
 import { useRpc } from '../../../hooks/useRpc';
-import { formatDate, formatINR, formatINRAxis, formatNumber, formatPct } from '../../../lib/format';
-import { downloadCsv } from '../../../lib/csv';
-import { INK, SERIES, STATUS, axisTick, gridProps, tooltipStyle } from '../../../lib/chartTheme';
-import RenewalTimeline from '../charts/RenewalTimeline';
-import { RECOMMENDATION_STYLE } from '../constants';
+import { formatINR, formatINRAxis, formatNumber, formatPct } from '../../../lib/format';
+import { INK, SERIES, axisTick, gridProps, tooltipStyle } from '../../../lib/chartTheme';
+import RenewalCalendar from '../charts/RenewalCalendar';
+import { ACTION_COLOR } from '../constants';
 import { useLicensing } from '../LicensingContext';
 
-const REC_COLORS = { Renew: STATUS.good, Review: STATUS.warning, 'Right-size': STATUS.serious, 'True-up': STATUS.critical };
-const HORIZONS = [{ months: 12, label: '12 months' }, { months: 24, label: '24 months' }];
+const ACTION_SAYS = { Renew: 'keep as is', Review: 'renegotiate', 'Right-size': 'cut seats', 'True-up': 'buy more seats' };
+// Calendar quarter → plain months + Indian fiscal quarter (FY starts in April)
+function quarterLabel(iso) {
+  const d = new Date(`${iso}T00:00:00Z`);
+  const m = d.getUTCMonth(); const y = d.getUTCFullYear();
+  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const fyStart = m >= 3 ? y : y - 1;
+  const fq = m >= 3 ? Math.floor((m - 3) / 3) + 1 : 4;
+  return { months: `${names[m]}–${names[m + 2]} ${y}`, fy: `Q${fq} FY${String(fyStart).slice(2)}-${String(fyStart + 1).slice(2)}` };
+}
 
-/** Renewals & Contracts: what renews when, what must be decided now, what it will cost, and every contract. */
+/** Renewals & Contracts: when decisions and renewals fall, how much renews each quarter, and what renewing will cost extra. */
 export default function RenewalsPage() {
   const { filters, kpis, open } = useLicensing();
   const [horizon, setHorizon] = useState(12);
-  const [includeExpired, setIncludeExpired] = useState(true);
+  const [basis, setBasis] = useState('all');
   const renewals = useRpc('it_lic_renewals', { p_filters: filters, p_months: horizon });
-  const contracts = useRpc('it_lic_contracts', { p_filters: { ...filters, include_expired: includeExpired } });
-
   const k = kpis.data ?? {};
   const show = (v, fmt) => (kpis.loading && !kpis.data ? '…' : v === null || v === undefined ? '—' : fmt(v));
-  const rows = useMemo(() => renewals.data ?? [], [renewals.data]);
-  const timeline = rows.map((r) => ({ ...r, annual_cost: r.annual_value }));
+  const rows = useMemo(() => (renewals.data ?? []).filter((r) => r.days_to_renewal >= 0 && r.days_to_renewal <= horizon * 30.5), [renewals.data, horizon]);
 
   const byQuarter = useMemo(() => {
     const m = new Map();
     for (const r of rows) {
-      const q = m.get(r.quarter) || { quarter: r.quarter, label: `Q${Math.floor(new Date(r.quarter).getMonth() / 3) + 1} ${new Date(r.quarter).getFullYear()}` };
+      const ql = quarterLabel(r.quarter);
+      const q = m.get(r.quarter) || { quarter: r.quarter, label: ql.months, fy: ql.fy, total: 0, items: [] };
       q[r.recommendation] = (q[r.recommendation] || 0) + Number(r.annual_value);
+      q.total += Number(r.annual_value);
+      q.items.push(r);
       m.set(r.quarter, q);
     }
-    return [...m.values()].sort((a, b) => a.quarter.localeCompare(b.quarter));
+    return [...m.values()].sort((a, b) => a.quarter.localeCompare(b.quarter)).map((q) => ({ ...q, totalLabel: formatINR(q.total) }));
   }, [rows]);
-  const uplift = [...rows].filter((r) => r.uplift_exposure > 0).sort((a, b) => b.uplift_exposure - a.uplift_exposure)
-    .map((r) => ({ ...r, basis: r.renewal_quote_inr ? 'quoted' : `cap ${r.uplift_cap_pct}%` }));
+  const biggest = byQuarter.reduce((b, q) => (!b || q.total > b.total ? q : b), null);
+  const totalRenewing = rows.reduce((t, r) => t + Number(r.annual_value), 0);
+
+  const uplift = rows.filter((r) => r.uplift_exposure > 0 && (basis === 'all' || (basis === 'quoted') === Boolean(r.renewal_quote_inr)))
+    .map((r) => ({
+      ...r, name: r.short_name || r.software_name, extra: Number(r.uplift_exposure),
+      pct: Number(r.uplift_exposure) / Number(r.annual_value),
+      after: Number(r.annual_value) + Number(r.uplift_exposure),
+      how: r.renewal_quote_inr ? 'vendor quote' : `estimate at the ${r.uplift_cap_pct}% cap`,
+    }))
+    .sort((a, b) => b.extra - a.extra)
+    .map((r) => ({ ...r, tag: `+${formatINR(r.extra)} (+${(r.pct * 100).toFixed(1)}%)` }));
+  const extraTotal = uplift.reduce((t, r) => t + r.extra, 0);
 
   return (
     <div className="space-y-6">
@@ -50,134 +69,100 @@ export default function RenewalsPage() {
         <KpiCard title="Renewals in 12 Months" value={show(k.renewal_value_12m, formatINR)} icon={<Repeat size={20} />}
           sub={`${formatNumber(k.renewals_12m)} contracts · ${formatPct(k.auto_renew_share, 0)} auto-renew`} tooltip="Annual value of contracts ending within 12 months." />
         <KpiCard title="Uplift Exposure (12 mo)" value={show(k.uplift_exposure_12m, formatINR)} icon={<TrendingUp size={20} />}
-          sub="extra cost if renewed as quoted / at the cap" tooltip="Σ (renewal quote, or annual value × (1 + uplift cap)) − current annual value, for contracts renewing within 12 months." />
+          sub="extra per year if renewed as quoted / at the cap" tooltip="Σ (renewal quote, or annual value × (1 + uplift cap)) − current annual value, for contracts renewing within 12 months." />
         <KpiCard title="Quotes Awaiting Signature" value={show(k.quotes_awaiting, formatNumber)} icon={<FilePen size={20} />}
           onClick={() => open.docs({ doc_type: 'Renewal Quote' })} tooltip="Renewal quotes received but not countersigned. Click to see them." />
         <KpiCard title="Auto-Renew Share" value={show(k.auto_renew_share, (v) => formatPct(v, 0))} icon={<Repeat size={20} />}
           sub="of contracts renewing in 12 months" tooltip="Auto-renewing contracts need an explicit decision before the notice deadline." />
       </div>
 
-      <Panel title="Renewal timeline"
-        actions={(
-          <div role="radiogroup" aria-label="Horizon" className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
-            {HORIZONS.map((h) => (
-              <button key={h.months} type="button" role="radio" aria-checked={horizon === h.months} onClick={() => setHorizon(h.months)}
-                className={`rounded-md px-3 py-1 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 ${horizon === h.months ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>{h.label}</button>
-            ))}
-          </div>
-        )}
-        tooltip="Each contract's decision window: notice deadline (tick) to end date (dot). Select a row to open the contract.">
-        {k.as_of ? <RenewalTimeline data={timeline} asOf={k.as_of} horizonDays={horizon === 12 ? 365 : 730}
-          onSelect={(id) => { const r = rows.find((x) => x.software_id === id); if (r) open.contract(r.contract_id); }} /> : <p className="text-sm text-slate-500">Loading…</p>}
+      <Panel title="Renewal calendar"
+        actions={<Segmented label="Horizon" value={horizon} onChange={setHorizon} options={[{ value: 12, label: '12 months' }, { value: 24, label: '24 months' }]} />}
+        tooltip="A month-by-month planner. Each contract appears on its notice deadline (the last day to cancel or renegotiate before it renews) and on its end date (with its annual value and recommended action). Select an entry to open the contract, its documents and renewal quote.">
+        {k.as_of && renewals.data ? <RenewalCalendar rows={renewals.data} asOf={k.as_of} months={horizon} onOpen={(id) => open.contract(id)} /> : <p className="text-sm text-slate-500">Loading…</p>}
       </Panel>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <Panel title="Renewal value by quarter" tooltip="Annual value renewing each quarter, coloured by the recommended action (labelled in the legend).">
+        <Panel title="How much renews each quarter"
+          tooltip="The annual value of contracts whose term ends in each quarter, split by what we recommend doing at renewal. Use it to see when the big renewal decisions (and their budget impact) land. Hover a bar for the contracts.">
+          <p className="mb-2 text-sm text-slate-700">
+            <b>{formatINR(totalRenewing)}</b> of annual contracts renew in the next {horizon} months across {rows.length} contracts.
+            {biggest && <> The biggest quarter is <b>{biggest.label}</b> ({biggest.fy}): <b>{formatINR(biggest.total)}</b> from {biggest.items.map((r) => r.short_name || r.software_name).join(', ')}.</>}
+          </p>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={byQuarter} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+              <ComposedChart data={byQuarter} margin={{ top: 22, right: 8, left: 4, bottom: 0 }}>
                 <CartesianGrid {...gridProps} />
                 <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={{ stroke: INK.axis }} />
                 <YAxis tickFormatter={formatINRAxis} tick={axisTick} tickLine={false} axisLine={false} width={60} />
-                <Tooltip formatter={(v, n) => [formatINR(v), n]} {...tooltipStyle} cursor={{ fill: '#f1f5f9' }} />
-                <Legend wrapperStyle={{ fontSize: 12, color: INK.secondary }} />
-                {Object.keys(REC_COLORS).map((rec) => (
-                  <Bar key={rec} dataKey={rec} name={rec} stackId="q" fill={REC_COLORS[rec]} stroke={INK.surface} strokeWidth={1} maxBarSize={48} />
+                <Tooltip {...tooltipStyle} cursor={{ fill: '#f1f5f9' }}
+                  content={({ active, payload }) => {
+                    if (!active || !payload?.length) return null;
+                    const q = payload[0].payload;
+                    return (
+                      <div className="rounded-lg border border-black/10 bg-white px-3 py-2 text-xs shadow-sm">
+                        <p className="font-semibold text-slate-700">{q.label} · {q.fy}</p>
+                        <p className="mb-1 text-slate-900">{formatINR(q.total)} renewing · {q.items.length} contract{q.items.length === 1 ? '' : 's'}</p>
+                        {q.items.map((r) => <p key={r.contract_id} className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: ACTION_COLOR[r.recommendation] }} />{r.short_name || r.software_name}: {formatINR(r.annual_value)} · {r.recommendation}</p>)}
+                      </div>
+                    );
+                  }} />
+                <Legend wrapperStyle={{ fontSize: 12, color: INK.secondary }} formatter={(v) => `${v} (${ACTION_SAYS[v]})`} itemSorter={(i) => Object.keys(ACTION_COLOR).indexOf(i.value)} />
+                {Object.keys(ACTION_COLOR).map((a, i) => (
+                  <Bar key={a} dataKey={a} name={a} stackId="q" fill={ACTION_COLOR[a]} stroke="#fff" strokeWidth={1} maxBarSize={56} isAnimationActive={false} radius={i === 3 ? [3, 3, 0, 0] : 0} />
                 ))}
-              </BarChart>
+                {/* invisible line at each bar's total, carrying the quarter total as its label */}
+                <Line dataKey="total" stroke="transparent" dot={false} activeDot={false} legendType="none" isAnimationActive={false}
+                  label={{ position: 'top', fontSize: 11, fontWeight: 600, fill: INK.primary, formatter: (v) => formatINR(v) }} />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
+          <p className="mt-1 text-xs text-slate-500">Each bar is one calendar quarter (the fiscal quarter is in the tooltip). Colours show the recommended action at renewal.</p>
         </Panel>
-        <Panel title="Uplift exposure by contract" tooltip="Extra annual cost at renewal: from the renewal quote where one exists, otherwise the contract's uplift cap. Select a bar to open the contract.">
-          <div style={{ height: Math.max(220, uplift.length * 28 + 40) }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={uplift} layout="vertical" margin={{ top: 4, right: 72, left: 8, bottom: 0 }}>
-                <CartesianGrid stroke={INK.grid} horizontal={false} />
-                <XAxis type="number" tickFormatter={formatINRAxis} tick={axisTick} tickLine={false} axisLine={false} />
-                <YAxis type="category" dataKey="short_name" width={100} tick={{ fontSize: 12, fill: INK.secondary }} tickLine={false} axisLine={{ stroke: INK.axis }} />
-                <Tooltip formatter={(v, n, p) => [`${formatINR(v)} (${p.payload.basis})`, 'Uplift']} {...tooltipStyle} cursor={{ fill: '#f1f5f9' }} />
-                <Bar dataKey="uplift_exposure" radius={[0, 4, 4, 0]} maxBarSize={14} cursor="pointer" onClick={(e) => open.contract((e.payload ?? e).contract_id)}>
-                  {uplift.map((r) => <Cell key={r.contract_id} fill={r.renewal_quote_inr ? SERIES[0] : '#86b6ef'} />)}
-                  <LabelList dataKey="basis" position="right" fill={INK.muted} fontSize={11} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+
+        <Panel title="What renewals will cost extra"
+          tooltip="Most contracts let the vendor raise the price at renewal, up to an agreed cap. For each contract renewing in the horizon this shows how much more we would pay per year: from the vendor's renewal quote where we have one, otherwise an estimate at the contract's cap. Select a bar to open the contract and its quote.">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <Segmented label="Basis" value={basis} onChange={setBasis} options={[{ value: 'all', label: 'All' }, { value: 'quoted', label: 'Quoted' }, { value: 'estimate', label: 'Estimated at cap' }]} />
           </div>
+          <p className="mb-2 text-sm text-slate-700">
+            Renewing these {uplift.length} contracts would add <b>{formatINR(extraTotal)}</b> a year.
+            {uplift[0] && <> The largest is <b>{uplift[0].name}</b>: {formatINR(uplift[0].annual_value)} → <b>{formatINR(uplift[0].after)}</b> a year, {uplift[0].tag} based on the {uplift[0].how}.</>}
+          </p>
+          {!uplift.length ? <p className="py-8 text-center text-sm text-slate-500">No price increases in this horizon.</p> : (
+            <div style={{ height: Math.max(180, uplift.length * 30 + 40) }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={uplift} layout="vertical" margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+                  <CartesianGrid stroke={INK.grid} horizontal={false} />
+                  <XAxis type="number" tickFormatter={formatINRAxis} tick={axisTick} tickLine={false} axisLine={false} />
+                  <YAxis type="category" dataKey="name" width={110} interval={0} tick={{ fontSize: 12, fill: INK.secondary }} tickLine={false} axisLine={{ stroke: INK.axis }} />
+                  <YAxis yAxisId="v" orientation="right" type="category" dataKey="tag" width={120} interval={0} tick={{ fontSize: 11, fill: INK.secondary }} tickLine={false} axisLine={false} />
+                  <Tooltip {...tooltipStyle} cursor={{ fill: '#f1f5f9' }}
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const r = payload[0].payload;
+                      return (
+                        <div className="rounded-lg border border-black/10 bg-white px-3 py-2 text-xs shadow-sm">
+                          <p className="font-semibold text-slate-700">{r.software_name}</p>
+                          <p>Today {formatINR(r.annual_value)}/yr → at renewal <b>{formatINR(r.after)}</b>/yr</p>
+                          <p>Extra <b>{formatINR(r.extra)}</b> (+{(r.pct * 100).toFixed(1)}%) · {r.how} · cap {r.uplift_cap_pct}%</p>
+                          <p className="text-slate-500">Renews {new Date(r.end_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+                        </div>
+                      );
+                    }} />
+                  <Bar dataKey="extra" maxBarSize={16} radius={[0, 4, 4, 0]} isAnimationActive={false} cursor="pointer" onClick={(e) => open.contract((e.payload ?? e).contract_id)}>
+                    {uplift.map((r) => <Cell key={r.contract_id} fill={r.renewal_quote_inr ? SERIES[0] : '#86b6ef'} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          <p className="mt-2 flex flex-wrap gap-3 text-xs text-slate-600">
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: SERIES[0] }} />from the vendor's renewal quote</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: '#86b6ef' }} />estimate: current value × the contract's uplift cap</span>
+          </p>
         </Panel>
       </div>
-
-      <Panel title={`Decision queue · next ${horizon} months`} flush
-        actions={<button type="button" disabled={!rows.length} onClick={() => downloadCsv('decision-queue.csv', rows, [
-          { key: 'software_name', label: 'Product' }, { key: 'contract_id', label: 'Contract' }, { key: 'vendor_name', label: 'Vendor' },
-          { key: 'notice_deadline', label: 'Notice deadline' }, { key: 'end_date', label: 'End date' }, { key: 'auto_renew', label: 'Auto-renew' },
-          { key: 'annual_value', label: 'Annual value' }, { key: 'renewal_quote_inr', label: 'Quote' }, { key: 'uplift_exposure', label: 'Uplift' },
-          { key: 'utilisation', label: 'Utilisation' }, { key: 'recommendation', label: 'Action' }])}
-          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-sky-500">Export CSV</button>}
-        tooltip="Contracts renewing in the horizon, nearest notice deadline first, with the recommended action and the quote document.">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left text-slate-600">
-            <thead className="text-xs uppercase bg-slate-50 text-slate-500 border-b border-slate-200"><tr>
-              {['Contract', 'Notice deadline', 'Ends', 'Annual value', 'Quote / uplift', 'Utilisation', 'Action', 'Documents'].map((h, i) => (
-                <th key={h} scope="col" className={`px-4 py-2.5 font-semibold whitespace-nowrap ${i >= 3 && i <= 5 ? 'text-right' : ''}`}>{h}</th>))}
-            </tr></thead>
-            <tbody className="tabular-nums">
-              {rows.map((r) => (
-                <tr key={r.contract_id} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-2.5 min-w-[13rem]"><button type="button" onClick={() => open.contract(r.contract_id)} className="text-left font-medium text-slate-900 hover:text-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">{r.software_name}</button>
-                    <span className="block text-xs text-slate-500">{r.contract_id} · {r.vendor_name}{r.auto_renew ? ' · auto-renew' : ''}</span></td>
-                  <td className="px-4 py-2.5 whitespace-nowrap"><span className={r.days_to_notice <= 30 ? 'text-red-700 font-semibold' : r.days_to_notice <= 90 ? 'text-amber-700 font-medium' : ''}>{formatDate(r.notice_deadline)}</span>
-                    <span className="block text-xs text-slate-500">{r.days_to_notice < 0 ? 'passed' : `in ${r.days_to_notice} d`}</span></td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">{formatDate(r.end_date)}</td>
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{formatINR(r.annual_value)}</td>
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{r.renewal_quote_inr ? formatINR(r.renewal_quote_inr) : '—'}<span className="block text-xs text-red-700">+{formatINR(r.uplift_exposure)}</span></td>
-                  <td className="px-4 py-2.5 text-right">{formatPct(r.utilisation, 0)}</td>
-                  <td className="px-4 py-2.5"><span className={`rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${RECOMMENDATION_STYLE[r.recommendation]}`}>{r.recommendation}</span></td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">
-                    {r.quote_file_url && <a href={r.quote_file_url} target="_blank" rel="noopener noreferrer" className="mr-2 text-xs font-medium text-sky-700 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">Quote PDF</a>}
-                    <button type="button" onClick={() => open.docs({ contract: r.contract_id })} className="text-xs font-medium text-sky-700 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">All ({r.doc_count})</button>
-                  </td>
-                </tr>
-              ))}
-              {renewals.data && !rows.length && <tr><td colSpan={8} className="px-4 py-6 text-center text-slate-500">No renewals in this horizon.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
-
-      <Panel title="Contract register" flush
-        actions={<label className="inline-flex items-center gap-1.5 text-xs text-slate-600"><input type="checkbox" checked={includeExpired} onChange={(e) => setIncludeExpired(e.target.checked)} className="rounded border-slate-300 focus:ring-sky-500" />Include expired</label>}
-        tooltip="Every contract, including expired predecessors. Select one for terms, renewal history, documents and invoices.">
-        <div className="overflow-x-auto max-h-[32rem]">
-          <table className="w-full text-sm text-left text-slate-600">
-            <thead className="text-xs uppercase bg-slate-50 text-slate-500 border-b border-slate-200 sticky top-0"><tr>
-              {['Contract', 'Status', 'Term', 'Annual value', 'Billing', 'Renewal chain', 'Documents', 'Invoices'].map((h, i) => (
-                <th key={h} scope="col" className={`px-4 py-2.5 font-semibold whitespace-nowrap ${i === 3 ? 'text-right' : ''}`}>{h}</th>))}
-            </tr></thead>
-            <tbody className="tabular-nums">
-              {(contracts.data ?? []).map((c) => (
-                <tr key={c.contract_id} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-2.5 min-w-[13rem]"><button type="button" onClick={() => open.contract(c.contract_id)} className="text-left font-medium text-slate-900 hover:text-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">{c.software_name}</button>
-                    <span className="block text-xs text-slate-500">{c.contract_id} · {c.vendor_name}</span></td>
-                  <td className={`px-4 py-2.5 text-xs font-medium ${c.status === 'Active' ? 'text-green-800' : 'text-slate-500'}`}>{c.status}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">{formatDate(c.start_date)} – {formatDate(c.end_date)}</td>
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{formatINR(c.annual_value)}</td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">{c.billing_frequency} · {c.original_currency}</td>
-                  <td className="px-4 py-2.5 text-xs whitespace-nowrap">
-                    {c.predecessor_contract_id && <button type="button" onClick={() => open.contract(c.predecessor_contract_id)} className="text-sky-700 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">← {c.predecessor_contract_id}</button>}
-                    {c.successor_contract_id && <button type="button" onClick={() => open.contract(c.successor_contract_id)} className="text-sky-700 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">→ {c.successor_contract_id}</button>}
-                    {!c.predecessor_contract_id && !c.successor_contract_id && <span className="text-slate-400">—</span>}
-                  </td>
-                  <td className="px-4 py-2.5 whitespace-nowrap">
-                    <button type="button" onClick={() => open.docs({ contract: c.contract_id })} className="text-xs font-medium text-sky-700 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">{c.doc_count} docs</button>
-                    {!c.signed_msa && <span className="ml-1 text-xs font-medium text-red-700">· no signed MSA</span>}
-                  </td>
-                  <td className="px-4 py-2.5 text-xs whitespace-nowrap">{c.invoices}{c.problem_invoices ? <span className="text-red-700 font-medium"> · {c.problem_invoices} held up</span> : ''}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Panel>
     </div>
   );
 }

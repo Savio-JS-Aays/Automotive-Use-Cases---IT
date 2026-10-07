@@ -43,7 +43,7 @@ The pre-redesign catalogue (hash-named apps, random Security/Licensing data, unb
 
 | Module | Visual | Drill-down |
 |---|---|---|
-| Overview | Service × day availability heatmap · Top risks list | cell → that day's incidents → incident drawer; risk → owning module, pre-filtered |
+| Overview | Operations pulse heatmap (Availability · Incidents · Change · Security · Licences) · Top risks list | service-day → incidents → incident drawer; change cell → Deployments for that service and day; security → Security; licence cell → product drawer; risk → owning module |
 | Reliability | daily availability and daily p95 (each with its own service filter, compare up to 3) · time to resolve (median bars; group by priority/service/root cause; service and priority filters) · alert → incident funnel · incidents table | incident → drawer (lifecycle, alerts, causing deployment) |
 | Change | Deployment calendar (weekday × week, counts + failed-day dots, weekday/week totals) · CFR by service stacked by change type (type toggle) · deployments per week (successful vs failed) · deployments table (date range, type, failed-only filters) | day / week → table filter; service bar → focus; caused incident chip → drawer |
 | Security | vulnerability ageing (stacked by age) · by asset class · threat small multiples · phishing trend · incidents by vector · open-vulnerability table | |

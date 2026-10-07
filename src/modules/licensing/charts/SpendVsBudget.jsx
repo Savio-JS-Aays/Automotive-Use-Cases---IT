@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Bar, CartesianGrid, Cell, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { formatINR, formatINRAxis, formatMonth } from '../../../lib/format';
 import { INK, SERIES, axisTick, gridProps, tooltipStyle } from '../../../lib/chartTheme';
+import { toggleCls, toggleGroupCls } from '../../../lib/ui';
 
 const VIEWS = [
   { id: 'monthly', label: 'Monthly' },
@@ -19,7 +20,7 @@ export default function SpendVsBudget({ data = [], selectedMonth, onMonthClick }
 
   return (
     <div>
-      <div role="radiogroup" aria-label="Spend view" className="mb-3 inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+      <div role="radiogroup" aria-label="Spend view" className={`mb-3 ${toggleGroupCls}`}>
         {VIEWS.map((v) => (
           <button
             key={v.id}
@@ -27,7 +28,7 @@ export default function SpendVsBudget({ data = [], selectedMonth, onMonthClick }
             role="radio"
             aria-checked={view === v.id}
             onClick={() => setView(v.id)}
-            className={`rounded-md px-3 py-1 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 ${view === v.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+            className={toggleCls(view === v.id)}
           >
             {v.label}
           </button>

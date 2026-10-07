@@ -6,7 +6,6 @@ import Panel from '../../../components/Panel';
 import { useRpc } from '../../../hooks/useRpc';
 import { formatINR, formatMonth, formatSignedPct } from '../../../lib/format';
 import { useGlobalStore } from '../../../store/useGlobalStore';
-import { downloadCsv } from '../../../lib/csv';
 import SpendVsBudget from '../charts/SpendVsBudget';
 import YearOnYear from '../charts/YearOnYear';
 import SpendBreakdown from '../charts/SpendBreakdown';
@@ -107,38 +106,6 @@ export default function SpendPage() {
               else patch({ [dim]: id });
             }} />
         )}
-      </Panel>
-
-      <Panel title="Budget variance by product" flush
-        actions={<button type="button" disabled={!variance.data?.length} onClick={() => downloadCsv('budget-variance.csv', variance.data, [
-          { key: 'software_name', label: 'Product' }, { key: 'vendor_name', label: 'Vendor' }, { key: 'business_vertical', label: 'Vertical' },
-          { key: 'fy_budget', label: 'FY budget' }, { key: 'ytd_budget', label: 'Budget to date' }, { key: 'ytd_actual', label: 'Actual to date' },
-          { key: 'ytd_variance', label: 'Variance to date' }, { key: 'forecast', label: 'FY forecast' }, { key: 'forecast_variance', label: 'Forecast vs FY budget' }, { key: 'yoy', label: 'Growth vs last FY' }])}
-          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-sky-500">Export CSV</button>}
-        tooltip="Per product, worst forecast first. Forecast = spend to date + 3-month run-rate × remaining months.">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left text-slate-600">
-            <thead className="text-xs uppercase bg-slate-50 text-slate-500 border-b border-slate-200"><tr>
-              {['Product', 'Vertical', 'FY budget', 'Budget to date', 'Actual to date', 'Variance', 'FY forecast', 'Forecast vs budget', 'vs last FY'].map((h, i) => (
-                <th key={h} scope="col" className={`px-4 py-2.5 font-semibold whitespace-nowrap ${i > 1 ? 'text-right' : ''}`}>{h}</th>))}
-            </tr></thead>
-            <tbody className="tabular-nums whitespace-nowrap">
-              {(variance.data ?? []).map((r) => (
-                <tr key={r.software_id} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-2.5"><button type="button" onClick={() => open.product(r.software_id, 'Spend')} className="text-left font-medium text-slate-900 hover:text-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">{r.software_name}</button><span className="block text-xs text-slate-500">{r.vendor_name}</span></td>
-                  <td className="px-4 py-2.5">{r.business_vertical}</td>
-                  <td className="px-4 py-2.5 text-right">{formatINR(r.fy_budget)}</td>
-                  <td className="px-4 py-2.5 text-right">{formatINR(r.ytd_budget)}</td>
-                  <td className="px-4 py-2.5 text-right">{formatINR(r.ytd_actual)}</td>
-                  <td className={`px-4 py-2.5 text-right ${r.ytd_variance > 0.02 ? 'text-red-700 font-semibold' : ''}`}>{formatSignedPct(r.ytd_variance)}</td>
-                  <td className="px-4 py-2.5 text-right">{formatINR(r.forecast)}</td>
-                  <td className={`px-4 py-2.5 text-right ${r.forecast_variance > 0.02 ? 'text-red-700 font-semibold' : ''}`}>{formatSignedPct(r.forecast_variance)}</td>
-                  <td className="px-4 py-2.5 text-right">{formatSignedPct(r.yoy)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </Panel>
 
       <div id="invoices" className="scroll-mt-4">

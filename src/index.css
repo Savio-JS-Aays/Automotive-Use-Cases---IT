@@ -2,3 +2,15 @@
 /* Recharts focuses the chart on mouse click; keep the outline for keyboard focus only */
 .recharts-wrapper:focus:not(:focus-visible),
 .recharts-surface:focus:not(:focus-visible) { outline: none; }
+
+/* Suite look: page background and KPI card accents (top border cycles blue → green → indigo → amber within a grid) */
+body { background: #f4f6fa; }
+.kpi-card { border-top-width: 3px; border-top-color: #2563eb; }
+.kpi-card:nth-child(4n + 2) { border-top-color: #10b981; }
+.kpi-card:nth-child(4n + 3) { border-top-color: #4f46e5; }
+.kpi-card:nth-child(4n + 4) { border-top-color: #f59e0b; }
+/* Select chevron (appearance-none removes the native one) */
+.suite-select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2364748b'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 0.75rem center; background-size: 1rem;
+}

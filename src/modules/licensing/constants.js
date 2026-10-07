@@ -1,3 +1,5 @@
+import { STATUS } from '../../lib/chartTheme';
+
 // Chip styles for the per-product recommendation (it_lic_portfolio.recommendation). Text always names the action.
 export const RECOMMENDATION_STYLE = {
   Renew: 'bg-green-50 text-green-800 border-green-200',
@@ -25,3 +27,6 @@ export const UTIL_BUCKETS = [
   { min: -1, color: '#9a3412', label: '< 55%' },
 ];
 export const utilColor = (v) => UTIL_BUCKETS.find((b) => v >= b.min).color;
+
+// Recommended action colours (always shown with the action name)
+export const ACTION_COLOR = { Renew: STATUS.good, Review: STATUS.warning, 'Right-size': STATUS.serious, 'True-up': STATUS.critical };

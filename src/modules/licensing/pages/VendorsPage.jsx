@@ -32,19 +32,11 @@ export default function VendorsPage() {
     };
   }, [rows]);
 
-  const pareto = useMemo(() => {
+  const ranked = useMemo(() => {
     const sorted = [...rows].sort((a, b) => b.acv - a.acv);
-    return sorted.map((v, i) => {
-      const cum = sorted.slice(0, i + 1).reduce((s, x) => s + Number(x.acv), 0);
-      return { ...v, acv_n: Number(v.acv), cumLabel: formatPct(kpi.total ? cum / kpi.total : 0, 0) };
-    });
+    return sorted.map((v) => ({ ...v, acv_n: Number(v.acv), shareLabel: `${formatINR(v.acv)} · ${formatPct(kpi.total ? Number(v.acv) / kpi.total : 0, 0)}` }));
   }, [rows, kpi.total]);
 
-  const certs = useMemo(() => {
-    const m = new Map();
-    rows.forEach((v) => (v.certifications?.length ? v.certifications : ['None']).forEach((c) => m.set(c, (m.get(c) ?? 0) + 1)));
-    return [...m.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
-  }, [rows]);
 
   const shown = rows.filter((v) => !riskFilter || v.risk_tier === riskFilter);
   const show = (v, fmt) => (vendors.loading && !vendors.data ? '…' : v === null || v === undefined ? '—' : fmt(v));
@@ -66,38 +58,23 @@ export default function VendorsPage() {
           sub="no ISO 27001 / SOC 2 evidence on file" tooltip="Vendors with no security certification recorded." />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <Panel title="Vendor spend concentration" tooltip="Pareto: vendors ranked by annual contract value; the label shows the cumulative share. One INR axis. Select a vendor for its drill-down.">
-          <div style={{ height: Math.max(240, pareto.length * 28 + 40) }}>
+      <div>
+        <Panel title="Vendor spend concentration" tooltip="Vendors ranked by annual contract value. Each label shows that vendor's value and its share of the total. Select a vendor for its drill-down.">
+          <div style={{ height: Math.max(240, ranked.length * 28 + 40) }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={pareto} layout="vertical" margin={{ top: 4, right: 56, left: 8, bottom: 0 }}>
+              <BarChart data={ranked} layout="vertical" margin={{ top: 4, right: 110, left: 8, bottom: 0 }}>
                 <CartesianGrid stroke={INK.grid} horizontal={false} />
                 <XAxis type="number" tickFormatter={formatINRAxis} tick={axisTick} tickLine={false} axisLine={false} />
                 <YAxis type="category" dataKey="vendor_name" width={140} tick={{ fontSize: 12, fill: INK.secondary }} tickLine={false} axisLine={{ stroke: INK.axis }} />
                 <Tooltip formatter={(v, n, p) => [`${formatINR(v)} (${formatPct(p.payload.share)} of total)`, 'Annual value']} {...tooltipStyle} cursor={{ fill: '#f1f5f9' }} />
                 <Bar dataKey="acv_n" fill={SERIES[0]} radius={[0, 4, 4, 0]} maxBarSize={14} cursor="pointer" onClick={(e) => open.vendor((e.payload ?? e).vendor_id)}>
-                  <LabelList dataKey="cumLabel" position="right" fill={INK.muted} fontSize={11} />
+                  <LabelList dataKey="shareLabel" position="right" fill={INK.secondary} fontSize={11} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </Panel>
 
-        <div>
-          <Panel title="Certification coverage" tooltip="How many vendors hold each certification (a vendor can hold several).">
-            <div style={{ height: Math.max(140, certs.length * 30 + 30) }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={certs} layout="vertical" margin={{ top: 4, right: 32, left: 8, bottom: 0 }}>
-                  <CartesianGrid stroke={INK.grid} horizontal={false} />
-                  <XAxis type="number" allowDecimals={false} tick={axisTick} tickLine={false} axisLine={false} />
-                  <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 12, fill: INK.secondary }} tickLine={false} axisLine={{ stroke: INK.axis }} />
-                  <Tooltip formatter={(v) => [v, 'Vendors']} {...tooltipStyle} cursor={{ fill: '#f1f5f9' }} />
-                  <Bar dataKey="count" radius={[0, 4, 4, 0]} maxBarSize={14} fill={SERIES[0]} label={{ position: 'right', fill: INK.secondary, fontSize: 11 }} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Panel>
-        </div>
       </div>
 
       <Panel title="Vendor register" flush

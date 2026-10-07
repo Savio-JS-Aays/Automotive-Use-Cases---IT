@@ -3,16 +3,22 @@ import { Bar, BarChart, CartesianGrid, LabelList, Legend, Line, LineChart, Respo
 import { AlarmClock, BellOff, Gauge, Siren, Timer, Wrench } from 'lucide-react';
 import KpiCard from '../../components/KpiCard';
 import Panel, { PageHeader } from '../../components/Panel';
-import Funnel from '../../components/Funnel';
+import Segmented from '../../components/Segmented';
+import AlertPanels from './AlertPanels';
+import DowntimeCost from './DowntimeCost';
 import LoadError from '../../components/LoadError';
 import IncidentDrawer from '../../components/IncidentDrawer';
-import IncidentsTable from '../../components/IncidentsTable';
+import IncidentExplorer from './IncidentExplorer';
+import SubTabs from '../../components/SubTabs';
 import { useRpc } from '../../hooks/useRpc';
 import { useItFilters } from '../../hooks/useItFilters';
-import { useUrlParam } from '../../hooks/useUrlParam';
+import { usePatchUrlParams, useUrlParam } from '../../hooks/useUrlParam';
+import { useGlobalStore } from '../../store/useGlobalStore';
+import { matchesPrio, prioShort } from '../../lib/priority';
 import { rpc } from '../../lib/rpc';
 import { INK, SERIES, axisTick, gridProps, tooltipStyle } from '../../lib/chartTheme';
-import { formatINR, formatNumber, formatPct, formatSignedPct } from '../../lib/format';
+import { formatINR, formatNumber, formatPct } from '../../lib/format';
+import { toggleCls, toggleGroupCls } from '../../lib/ui';
 
 const shortDate = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 const MAX_COMPARE = 3;
@@ -88,15 +94,21 @@ function useDailySeries(filters, picked) {
   return { rows: state.rows, loading: state.key !== key };
 }
 
-function DailyChart({ title, tooltip, services, filters, initial, metric }) {
+const METRICS = [{ value: 'avail', label: 'Availability' }, { value: 'p95', label: 'p95 latency' }];
+
+/** Daily availability or p95 latency (toggle), for all services or up to three compared services. */
+function DailyChart({ services, filters, initial }) {
   const [picked, setPicked] = useState(initial);
+  const [metric, setMetric] = useState('avail');
   const { rows, loading } = useDailySeries(filters, picked);
   const name = (id) => services.find((s) => s.service_id === id)?.short_name ?? id;
   const series = picked.length ? picked.map((p) => ({ key: p.id, label: name(p.id), color: SERIES[p.slot] })) : [{ key: 'all', label: 'All services', color: SERIES[0] }];
   const isAvail = metric === 'avail';
   const fmt = isAvail ? (v) => formatPct(v, 2) : (v) => `${formatNumber(v)} ms`;
   return (
-    <Panel title={title} tooltip={tooltip}>
+    <Panel title="Daily service health"
+      tooltip="Availability (uptime ÷ minutes per day) or p95 latency (95th-percentile response time per day). Switch the metric with the toggle; pick up to three services to compare, or All services for the average. Service metrics are global (no region).">
+      <div className="mb-3"><Segmented label="Metric" value={metric} onChange={setMetric} options={METRICS} /></div>
       <ServicePicker services={services} picked={picked} onChange={setPicked} />
       <div className="h-64">
         {loading && !rows.length ? <p className="text-sm text-slate-500">Loading…</p> : (
@@ -158,10 +170,10 @@ function TimeToResolve({ incidents, services, loading }) {
   return (
     <Panel title="Time to resolve" tooltip="Median hours from opened to resolved for incidents resolved in the window. Hover a bar for the count and the share resolved within its priority target (P1 4 h, P2 8 h, P3 24 h, P4 72 h).">
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-        <div role="radiogroup" aria-label="Group by" className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+        <div role="radiogroup" aria-label="Group by" className={toggleGroupCls}>
           {GROUPS.map((g) => (
             <button key={g.id} type="button" role="radio" aria-checked={group === g.id} onClick={() => setGroup(g.id)}
-              className={`rounded-md px-3 py-1 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 ${group === g.id ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}>{g.label}</button>
+              className={toggleCls(group === g.id)}>{g.label}</button>
           ))}
         </div>
         <label><span className="sr-only">Service</span>
@@ -203,69 +215,85 @@ export default function ReliabilityModule() {
   const [incident, setIncident] = useUrlParam('incident');
   const filters = useItFilters();
   const { data, loading, error } = useRpc('it_rel_overview', { p_filters: filters });
-  const incidents = useRpc('it_ops_incidents', { p_filters: filters, p_limit: 1000 });
-  const allDaily = useRpc('it_rel_daily', { p_filters: filters });
+  const prio = useGlobalStore((st) => st.incidentPriority);
+  const setGlobalFilter = useGlobalStore((st) => st.setGlobalFilter);
+  const setPrio = (v) => setGlobalFilter('incidentPriority', v);
+  const [prioParam] = useUrlParam('prio');      // legacy links: ?prio=1 sets the global filter
+  const [focus] = useUrlParam('focus');         // ?focus=incidents (Overview "Details")
+  const [tabParam] = useUrlParam('tab');
+  const tab = tabParam === 'health' ? 'health' : 'incidents';
+  const goIncidents = () => { patchUrl({ tab: null }); setTimeout(() => document.getElementById('incidents')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); };
+  const patchUrl = usePatchUrlParams();
+  // Two windows' worth, so the explorer can compare with the prior window; split by open date below
+  const incidents = useRpc('it_ops_incidents', { p_filters: { ...filters, days: filters.days * 2 }, p_limit: 3000 });
 
   const services = data?.services ?? [];
+  const w = data?.window;
+  const inWindow = (i, from, to) => { const d = i.open_time.slice(0, 10); return d >= from && d <= to; };
+  const curInc = useMemo(() => (w ? (incidents.data ?? []).filter((i) => inWindow(i, w.d_from, w.d_to)) : []), [incidents.data, w]);
+  const prvInc = useMemo(() => (w ? (incidents.data ?? []).filter((i) => inWindow(i, w.p_from, w.p_to)) : []), [incidents.data, w]);
+  // Arriving from the Overview incident card: apply a legacy ?prio, then bring the incident explorer into view once data is in
+  useEffect(() => {
+    if (!(prioParam || focus) || !curInc.length) return;
+    if (['1', '2', '3', '4', '12'].includes(prioParam)) setGlobalFilter('incidentPriority', prioParam);
+    patchUrl({ prio: null, focus: null, tab: null });
+    setTimeout(() => document.getElementById('incidents')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+  }, [prioParam, focus, curInc.length, setGlobalFilter, patchUrl]);
+  // Incident KPIs follow the global Incident Priority filter, so they are computed from the incident rows
+  const selCur = curInc.filter(matchesPrio(prio));
+  const mttrOf = (xs) => { const m = median(xs.filter((i) => i.status === 'Resolved' && i.mttr_minutes != null).map((i) => i.mttr_minutes)); return m == null ? null : m / 60; };
+  const ik = {
+    mtta: median(selCur.filter((i) => i.mtta_minutes != null).map((i) => Number(i.mtta_minutes))),
+    mttr: mttrOf(selCur), n: selCur.length,
+  };
+  const pTag = prio !== 'all' ? ` · ${prioShort(prio)}` : '';
   const initialPick = useMemo(() => (initialService ? [{ id: initialService, slot: 0 }] : []), [initialService]);
 
   if (error) return <LoadError error={error} what="App Reliability" />;
   const k = data?.kpis ?? {};
   const show = (v, fmt) => (loading && !data ? '…' : v === null || v === undefined ? '—' : fmt(v));
-  const rel = (cur, prev) => (cur != null && prev ? cur / prev - 1 : null);
-  const mttaDelta = rel(k.mtta_min, k.mtta_min_prev);
-  const mttrDelta = rel(k.mttr_h, k.mttr_h_prev);
-  const noiseDelta = k.noise_ratio != null && k.noise_ratio_prev != null ? k.noise_ratio - k.noise_ratio_prev : null;
+  const showInc = (v, fmt) => (incidents.loading && !incidents.data ? '…' : v === null || v === undefined ? '—' : fmt(v));
   const availability = services.length ? services.reduce((s, x) => s + Number(x.availability), 0) / services.length : null;
-  const dailyAvail = (allDaily.data ?? []).map((d) => d.availability);
 
   return (
     <div className="space-y-6 pb-10">
-      <PageHeader title="App Reliability" window={data?.window} note="service metrics are global; incidents follow the region filter" />
+      <PageHeader title="App Reliability" window={data?.window}
+        note={`service metrics are global; incidents follow the region filter${prio !== 'all' ? ` · Incident Priority ${prioShort(prio)} applies to time to acknowledge, time to resolve, incidents and the incident explorer` : ''}`} />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         <KpiCard title="Availability" icon={<Gauge size={20} />} value={show(availability, (v) => formatPct(v, 2))}
-          sub={`average across ${services.length || '…'} services`} spark={dailyAvail}
-          tooltip="Uptime minutes ÷ minutes in the window, averaged across services. Sparkline: daily availability across all services." />
-        <KpiCard title="Median Time to Acknowledge" icon={<AlarmClock size={20} />} value={show(k.mtta_min, (v) => `${v} min`)}
-          delta={mttaDelta !== null ? `${formatSignedPct(mttaDelta)} vs prior` : null} deltaTone={mttaDelta > 0 ? 'bad' : 'good'}
+          tooltip="Uptime minutes ÷ minutes in the window, averaged across services." />
+        <KpiCard title={`Median Time to Acknowledge${pTag}`} icon={<AlarmClock size={20} />} value={showInc(ik.mtta, (v) => `${v} min`)}
           tooltip="Median of (acknowledged − opened) for incidents opened in the window." />
-        <KpiCard title="Median Time to Resolve" icon={<Timer size={20} />} value={show(k.mttr_h, (v) => `${v.toFixed(1)} h`)}
-          delta={mttrDelta !== null ? `${formatSignedPct(mttrDelta)} vs prior` : null} deltaTone={mttrDelta > 0 ? 'bad' : 'good'}
+        <KpiCard title={`Median Time to Resolve${pTag}`} icon={<Timer size={20} />} value={showInc(ik.mttr, (v) => `${v.toFixed(1)} h`)}
           tooltip="Median of (resolved − opened) for incidents opened and resolved in the window." />
         <KpiCard title="Alert Noise" icon={<BellOff size={20} />} value={show(k.noise_ratio, (v) => formatPct(v, 0))}
-          delta={noiseDelta !== null ? `${formatSignedPct(noiseDelta, 1, ' pts')} vs prior` : null} deltaTone={noiseDelta > 0 ? 'bad' : 'good'}
-          sub="alerts that never became an incident"
           tooltip="Share of alerts in the window with no incident attached. High noise trains people to ignore alerts." />
         <KpiCard title="Cost of Downtime" icon={<Wrench size={20} />} value={show(k.downtime_cost, formatINR)}
-          sub="downtime minutes × cost per minute"
           tooltip="Σ downtime minutes × each service's cost of downtime per minute (it_dim_service)." />
-        <KpiCard title="Incidents" icon={<Siren size={20} />} value={show(k.incidents, formatNumber)}
-          sub={filters.region ? 'in the selected region' : 'all regions'}
-          tooltip="Incidents opened in the window (region filter applies)." />
+        <KpiCard title={`Incidents${pTag}`} icon={<Siren size={20} />} value={showInc(ik.n, formatNumber)}
+          onClick={goIncidents}
+          tooltip="Incidents opened in the window (region filter applies). Click to jump to incidents by priority." />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <DailyChart key={`a-${initialService ?? ''}`} title="Daily availability" metric="avail" services={services} filters={filters} initial={initialPick}
-          tooltip="Uptime ÷ minutes per day. Pick up to three services to compare, or All services for the average." />
-        <DailyChart key={`p-${initialService ?? ''}`} title="Daily p95 latency" metric="p95" services={services} filters={filters} initial={initialPick}
-          tooltip="Daily 95th-percentile response time. Pick up to three services to compare, or All services for the average." />
-        <TimeToResolve incidents={incidents.data ?? []} services={services} loading={incidents.loading} />
-        <Panel title="Alert → incident funnel" tooltip="How many alerts were raised, how many belonged to a real incident, and how many incidents were severe.">
-          {data && (
-            <Funnel stages={[
-              { label: 'Alerts raised', value: data.funnel.alerts },
-              { label: 'Alerts linked to an incident', value: data.funnel.linked_alerts, note: `${formatNumber(data.funnel.alerts - data.funnel.linked_alerts)} were noise` },
-              { label: 'Incidents', value: data.funnel.incidents },
-              { label: 'P1 / P2 incidents', value: data.funnel.p1p2 },
-            ]} />
-          )}
-        </Panel>
-      </div>
+      <SubTabs label="App Reliability sections" value={tab} onChange={(v) => patchUrl({ tab: v === 'incidents' ? null : v })} tabs={[
+        { value: 'incidents', label: 'Incidents', hint: 'Incidents by priority, day and service, the incident list with drill-down, and how long fixes take.' },
+        { value: 'health', label: 'Service health & alerts', hint: 'Daily availability and latency per service, how many alerts were real, and what downtime cost.' },
+      ]} />
 
-      <Panel title="Incidents" flush tooltip="Incidents opened in the window. Select one for its lifecycle, alerts and causing deployment.">
-        <IncidentsTable rows={incidents.data ?? []} loading={incidents.loading} onOpen={setIncident} />
-      </Panel>
+      {tab === 'incidents' ? (
+        <>
+          <IncidentExplorer cur={curInc} prv={prvInc} window={w} loading={incidents.loading && !incidents.data}
+            prio={prio} setPrio={setPrio} onIncident={setIncident} />
+          <TimeToResolve incidents={curInc} services={services} loading={incidents.loading} />
+        </>
+      ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className="xl:col-span-2"><DailyChart key={initialService ?? ''} services={services} filters={filters} initial={initialPick} /></div>
+          <AlertPanels window={w} services={services} incidents={curInc} prio={prio} />
+          <DowntimeCost className="xl:col-span-2" services={services} filters={filters} />
+        </div>
+      )}
 
       {incident && <IncidentDrawer incidentId={incident} onClose={() => setIncident(null)} />}
     </div>

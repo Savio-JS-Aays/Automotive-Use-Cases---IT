@@ -4,5 +4,10 @@ import { create } from 'zustand';
 export const useGlobalStore = create((set) => ({
   dateRange: 'Last 30 Days',
   regionId: 'All',
+  incidentPriority: 'all', // 'all' | '1'..'4' | '12' (Overview + App Reliability)
+  deployService: '',       // service_id or '' (Deployments page)
+  changeType: '',          // 'Code' | 'Config' | 'Infra' | '' (Deployments page)
+  secDepartment: '',       // security incidents + phishing department (Security page)
+  secAsset: '',            // vulnerability asset class (Security page)
   setGlobalFilter: (key, value) => set({ [key]: value }),
 }));

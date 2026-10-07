@@ -1,12 +1,18 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import DashboardLayout from './components/DashboardLayout';
 import OverviewModule from './modules/overview/OverviewModule';
 import ReliabilityModule from './modules/reliability/ReliabilityModule';
 import ChangeModule from './modules/change/ChangeModule';
+
+// Old addresses (e.g. the Overview scorecard's /change-impact link from it_ops_overview) keep their query string
+function LegacyRedirect({ to }) {
+  const { search } = useLocation();
+  return <Navigate to={`${to}${search}`} replace />;
+}
 import SecurityModule from './modules/security/SecurityModule';
 import LicensingLayout from './modules/licensing/LicensingLayout';
-import LicensingOverviewPage from './modules/licensing/pages/OverviewPage';
+import SubscriptionsPage from './modules/licensing/pages/SubscriptionsPage';
 import SpendPage from './modules/licensing/pages/SpendPage';
 import UsagePage from './modules/licensing/pages/UsagePage';
 import RenewalsPage from './modules/licensing/pages/RenewalsPage';
@@ -22,10 +28,11 @@ function App() {
 
           <Route path="/executive-overview" element={<OverviewModule />} />
           <Route path="/app-reliability" element={<ReliabilityModule />} />
-          <Route path="/change-impact" element={<ChangeModule />} />
+          <Route path="/deployments" element={<ChangeModule />} />
+          <Route path="/change-impact" element={<LegacyRedirect to="/deployments" />} />
           <Route path="/security" element={<SecurityModule />} />
           <Route path="/licensing-subs" element={<LicensingLayout />}>
-            <Route index element={<LicensingOverviewPage />} />
+            <Route index element={<SubscriptionsPage />} />
             <Route path="spend" element={<SpendPage />} />
             <Route path="usage" element={<UsagePage />} />
             <Route path="renewals" element={<RenewalsPage />} />

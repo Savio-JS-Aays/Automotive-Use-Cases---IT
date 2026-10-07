@@ -28,6 +28,40 @@ Rethought 2026-10-01 as a six-page suite that is the centre of the IT app. Docum
 | **it_fact_invoice** | 76 | cash view: one per billing period since Apr-2025, status Paid / Due / Overdue / Disputed |
 | it_license_document | 164 | contract-, vendor- and invoice-level; `expiry_date` for vendor security assessments |
 
+## Redesign 2026-10-07 (Subscriptions-centred)
+
+- **Tabs:** Subscriptions (default, replaces Overview) · Spend & Budget · Usage & Optimisation · Renewals & Contracts · Vendors · Documents & Compliance. `OverviewPage`, `SubscriptionRegister`, `ValueMatrix` and `RenewalTimeline` moved to `legacy/`.
+- **Global filters:** Vertical, Vendor and Category are now **sidebar filters** on every Licensing tab (URL params `?vertical= ?vendor= ?category=`, read by `LicensingLayout`), together with Region. The in-page filter bar is gone.
+- **Subscriptions** (`pages/SubscriptionsPage.jsx`, `tables/SubscriptionsTable.jsx`):
+  - **One row per product:** `it_lic_portfolio` + `it_lic_budget_variance` + `it_lic_optimisation` (summed over editions) + `it_lic_renewals` (quote, uplift).
+  - **Table column views:**
+    - Overview: annual value, utilisation, shelfware, renews, action;
+    - Spend & budget: FY budget, spent, vs budget, forecast, forecast vs budget, vs last FY;
+    - Usage & savings: seats, active, utilisation, seats to cut, saving at renewal, true-up, cost per user;
+    - Renewal: notice deadline, ends, annual value, extra at renewal, auto-renew, action, quote PDF.
+  - **Table filters:** search, Action, Budget (over / forecast over / within), Utilisation band, Renewal (notice ≤ 30 d / ≤ 90 d / ≤ 12 months), Auto-renew, Deployment, No signed MSA. CSV export.
+  - **KPIs (value only, recomputed from the filtered rows):** Subscriptions, Annual Contract Value, Spend vs Budget, Utilisation, Shelfware, Saving at Renewal, Renewing in 90 Days, Decisions Due ≤ 30 d.
+    - Unfiltered they equal `it_lic_kpis_ext`: 15 · ₹69.76 Cr · −1.1% · 87.3% · ₹8.27 Cr · ₹3.70 Cr · ₹16.38 Cr · 2.
+  - **Chart "Where the money sits":** measure (annual value / shelfware / saving at renewal) × group (product / vendor / category / vertical), product bars coloured by utilisation band. A product opens its drawer; a group sets the sidebar filter.
+  - **Chart "What to do at renewal":** annual value per recommended action, with a plain-language legend; a bar filters the table.
+- **Removed as redundant (now in the Subscriptions table):**
+  - Spend → *Budget variance by product*;
+  - Usage → *Optimisation opportunities*;
+  - Renewals → *Decision queue* and *Contract register* (contract history stays in the contract drawer).
+- **Usage:** Utilisation trend = filtered portfolio + **up to 3 products picked from chips** (fixed colour slots; default the two least utilised).
+- **Renewals:**
+  - **Renewal calendar** (`charts/RenewalCalendar.jsx`): a month card per month for 12 / 24 months.
+    - Each contract appears on its notice deadline (alarm icon, red ≤ 30 d) and on its end date (dot coloured by action, annual value).
+    - Filters: show (both / deadlines / ends), action, auto-renew only. A "Next decision" banner sits above the calendar.
+  - **How much renews each quarter:**
+    - Calendar-quarter bars (e.g. "Jan–Mar 2027", fiscal quarter in the tooltip), stacked by action with plain-language legend labels and the quarter total on top.
+    - Summary sentence, and a tooltip listing the contracts.
+  - **What renewals will cost extra** (replaces *Uplift exposure by contract*):
+    - Extra ₹ per year per contract with "+₹ (+%)" labels.
+    - Basis filter (all / quoted / estimated at cap) and an explanatory sentence ("₹10.30 Cr → ₹11.02 Cr a year…"). The tooltip shows today → at renewal.
+- **Vendors:** *Certification coverage* removed. *Vendor spend concentration* bars are labelled "₹ · share %" (no cumulative share).
+- **Documents:** *Coverage matrix* filters: search, document type + status (missing / unsigned / awaiting / signed), deployment, vendor assessment (needs action / expiring / expired / missing), only contracts with a gap; "n of N contracts".
+
 ## Pages
 
 ### Overview

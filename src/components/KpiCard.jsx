@@ -16,25 +16,25 @@ const TONE_CLASS = {
  *   onClick    makes the tile a button (drill-down)
  *   spark      array of numbers for a small trend line (decorative)
  */
-export default function KpiCard({ title, value, tooltip, icon, sub, delta, deltaTone = 'neutral', onClick, spark }) {
+export default function KpiCard({ title, value, tooltip, sub, delta, deltaTone = 'neutral', onClick, spark }) {
   const body = (
     <>
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium text-slate-600">{title}</h3>
+        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
         {tooltip && (
           <Tooltip content={tooltip}>
             <span tabIndex={0} aria-label={`About ${title}`} className="rounded focus:outline-none focus:ring-2 focus:ring-sky-500">
-              <HelpCircle size={16} className="text-slate-400" />
+              <HelpCircle size={18} className="text-slate-400" />
             </span>
           </Tooltip>
         )}
       </div>
-      <div className="mt-3 flex items-end justify-between gap-2">
-        <span className="text-2xl xl:text-3xl font-semibold text-slate-900">{value}</span>
-        {spark ? <Sparkline values={spark} /> : icon && <span className="bg-sky-50 text-sky-600 rounded-full p-2 inline-flex shrink-0">{icon}</span>}
+      <div className="mt-4 flex items-end justify-between gap-2">
+        <span className="text-[28px] leading-tight font-bold text-slate-900">{value}</span>
+        {spark && <Sparkline values={spark} />}
       </div>
       {(sub || delta) && (
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[13px]">
           {delta && <span className={`rounded-full px-2 py-0.5 font-medium ${TONE_CLASS[deltaTone]}`}>{delta}</span>}
           {sub && <span className="text-slate-500">{sub}</span>}
         </div>
@@ -42,10 +42,11 @@ export default function KpiCard({ title, value, tooltip, icon, sub, delta, delta
     </>
   );
 
-  const base = 'bg-white rounded-xl shadow-sm border border-slate-200 p-4 text-left';
+  // `icon` is accepted for compatibility but not drawn: the suite style uses a coloured top edge instead (.kpi-card)
+  const base = 'kpi-card bg-white rounded-xl shadow-sm border border-slate-200 p-5 text-left';
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={`${base} w-full flex flex-col justify-start hover:border-sky-300 hover:shadow focus:outline-none focus:ring-2 focus:ring-sky-500 transition`}>
+      <button type="button" onClick={onClick} className={`${base} w-full flex flex-col justify-start hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 transition`}>
         {body}
       </button>
     );

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { CheckCircle2, CircleAlert, FileCheck2, FileQuestion, FileWarning, Minus, PenLine, ShieldCheck, TriangleAlert } from 'lucide-react';
 import KpiCard from '../../../components/KpiCard';
 import Panel from '../../../components/Panel';
@@ -45,8 +46,25 @@ export default function DocumentsPage() {
   const { filters, kpis, open } = useLicensing();
   const coverage = useRpc('it_lic_doc_coverage', { p_filters: filters });
   const k = kpis.data ?? {};
-  const rows = coverage.data ?? [];
-  const types = rows[0]?.cells.map((c) => c.doc_type) ?? ['MSA', 'Order Form', 'SLA', 'DPA', 'SOW', 'Renewal Quote'];
+  const allRows = coverage.data ?? [];
+  const types = allRows[0]?.cells.map((c) => c.doc_type) ?? ['MSA', 'Order Form', 'SLA', 'DPA', 'SOW', 'Renewal Quote'];
+  const [cf, setCf] = useState({ gaps: false, docType: '', status: '', deployment: '', assessment: '', q: '' });
+  const setC = (p) => setCf((x) => ({ ...x, ...p }));
+  const isGap = (r) => r.cells.some((c) => ['missing', 'unsigned', 'awaiting'].includes(c.status)) || r.invoices.status === 'issue' || r.assessment.status !== 'valid';
+  const rows = allRows.filter((r) => {
+    const q = cf.q.trim().toLowerCase();
+    if (q && !`${r.software_name} ${r.contract_id} ${r.vendor_name}`.toLowerCase().includes(q)) return false;
+    if (cf.gaps && !isGap(r)) return false;
+    if (cf.deployment && r.deployment !== cf.deployment) return false;
+    if (cf.assessment && (cf.assessment === 'action' ? r.assessment.status === 'valid' : r.assessment.status !== cf.assessment)) return false;
+    if (cf.status) {
+      const cells = cf.docType ? r.cells.filter((c) => c.doc_type === cf.docType) : r.cells;
+      if (!cells.some((c) => c.status === cf.status)) return false;
+    }
+    return true;
+  });
+  const covActive = Object.values(cf).some(Boolean);
+  const fInput = 'rounded-md border border-slate-200 bg-white py-1.5 px-2 text-sm text-slate-800 font-normal focus:outline-none focus:ring-2 focus:ring-blue-500';
   const show = (v, fmt) => (kpis.loading && !kpis.data ? '…' : v === null || v === undefined ? '—' : fmt(v));
   const pct = k.contracts_active ? k.contracts_fully_documented / k.contracts_active : null;
 
@@ -72,13 +90,23 @@ export default function DocumentsPage() {
           sub={`${formatNumber(k.doc_gaps_critical)} critical`} onClick={() => open.docs({ gaps: true })} tooltip="Everything to chase: missing/unsigned documents, quotes, assessments, invoice problems." />
       </div>
 
-      <Panel title="Coverage matrix" tooltip="Every active contract against the documents it needs. Select a cell to open the document; a missing cell opens the gaps library. n/a = not required for this contract (e.g. SOW only for on-prem).">
+      <Panel title="Coverage matrix" tooltip="Every active contract against the documents it needs. Filter to contracts with gaps, a document type and status, deployment or vendor-assessment state. Select a cell to open the document; a missing cell opens the gaps library. n/a = not required for this contract (e.g. SOW only for on-prem).">
+        <div className="mb-3 flex flex-wrap items-end gap-3 text-xs font-semibold text-slate-600">
+          <label className="flex flex-col gap-1">Search<input type="search" value={cf.q} onChange={(e) => setC({ q: e.target.value })} placeholder="Product, contract, vendor" className={`${fInput} w-44`} /></label>
+          <label className="flex flex-col gap-1">Document<select value={cf.docType} onChange={(e) => setC({ docType: e.target.value })} className={fInput}><option value="">Any document</option>{types.map((t) => <option key={t}>{t}</option>)}</select></label>
+          <label className="flex flex-col gap-1">Status<select value={cf.status} onChange={(e) => setC({ status: e.target.value })} className={fInput}><option value="">Any status</option><option value="missing">Missing</option><option value="unsigned">Unsigned</option><option value="awaiting">Awaiting signature</option><option value="signed">Signed</option></select></label>
+          <label className="flex flex-col gap-1">Deployment<select value={cf.deployment} onChange={(e) => setC({ deployment: e.target.value })} className={fInput}><option value="">All</option><option>SaaS</option><option>On-prem</option><option>Hybrid</option></select></label>
+          <label className="flex flex-col gap-1">Vendor assessment<select value={cf.assessment} onChange={(e) => setC({ assessment: e.target.value })} className={fInput}><option value="">All</option><option value="action">Needs action</option><option value="expiring">Expiring</option><option value="expired">Expired</option><option value="missing">Missing</option></select></label>
+          <label className="inline-flex items-center gap-1.5 pb-2 font-normal"><input type="checkbox" checked={cf.gaps} onChange={(e) => setC({ gaps: e.target.checked })} className="rounded border-slate-300 focus:ring-blue-500" />Only contracts with a gap</label>
+          {covActive && <button type="button" onClick={() => setCf({ gaps: false, docType: '', status: '', deployment: '', assessment: '', q: '' })} className="pb-2 font-medium text-blue-700 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">Clear</button>}
+          <span className="ml-auto pb-2 font-normal tabular-nums">{rows.length} of {allRows.length} contracts</span>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-sm" aria-label="Document coverage by contract">
             <thead className="text-xs uppercase text-slate-500">
               <tr>
                 <th scope="col" className="px-2 py-2 text-left font-semibold">Contract</th>
-                {types.map((t) => <th key={t} scope="col" className="px-1 py-2 font-semibold whitespace-nowrap">{t}</th>)}
+                {types.map((t) => <th key={t} scope="col" className={`px-1 py-2 font-semibold whitespace-nowrap ${cf.docType === t ? 'text-blue-700' : ''}`}>{t}</th>)}
                 <th scope="col" className="px-1 py-2 font-semibold">Invoices</th>
                 <th scope="col" className="px-1 py-2 font-semibold whitespace-nowrap">Vendor assessment</th>
               </tr>
@@ -108,6 +136,7 @@ export default function DocumentsPage() {
                   </tr>
                 );
               })}
+              {!coverage.loading && !rows.length && <tr><td colSpan={types.length + 3} className="px-2 py-6 text-center text-slate-500">No contracts match these filters.</td></tr>}
               {coverage.loading && !rows.length && <tr><td colSpan={types.length + 3} className="px-2 py-6 text-center text-slate-500">Loading…</td></tr>}
             </tbody>
           </table>

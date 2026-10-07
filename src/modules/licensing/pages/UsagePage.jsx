@@ -2,8 +2,7 @@ import { Armchair, PiggyBank, Scale, UserCheck, UserX, Users } from 'lucide-reac
 import KpiCard from '../../../components/KpiCard';
 import Panel from '../../../components/Panel';
 import { useRpc } from '../../../hooks/useRpc';
-import { formatDate, formatINR, formatNumber, formatPct, formatSignedPct } from '../../../lib/format';
-import { downloadCsv } from '../../../lib/csv';
+import { formatINR, formatNumber, formatPct, formatSignedPct } from '../../../lib/format';
 import SeatFunnel from '../charts/SeatFunnel';
 import UtilisationTrend from '../charts/UtilisationTrend';
 import ReclaimTable from '../tables/ReclaimTable';
@@ -67,39 +66,6 @@ export default function UsagePage() {
 
       <Panel title="Seats by department" tooltip="Assigned seats by department: active in 30 days, inactive 30–90 days, dormant 90+ days (with annual cost). Filter by product, switch to % of assigned to compare departments of different size, and hide the company-wide pools. Select a bar to filter the reclaim list.">
         <DepartmentSeats filters={filters} products={rows} selected={dept} onSelect={(d) => patch({ dept: d === dept ? null : d })} />
-      </Panel>
-
-      <Panel title="Optimisation opportunities" flush
-        actions={<button type="button" disabled={!optimisation.data?.length} onClick={() => downloadCsv('optimisation.csv', optimisation.data, [
-          { key: 'software_name', label: 'Product' }, { key: 'edition', label: 'Edition' }, { key: 'purchased', label: 'Purchased' }, { key: 'assigned', label: 'Assigned' },
-          { key: 'active90', label: 'Active 90d' }, { key: 'recommended', label: 'Recommended' }, { key: 'reduction', label: 'Reduce by' },
-          { key: 'annual_saving', label: 'Saving (INR/yr)' }, { key: 'trueup_cost', label: 'True-up (INR/yr)' }, { key: 'end_date', label: 'Renewal' }, { key: 'action', label: 'Action' }])}
-          className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-sky-500">Export CSV</button>}
-        tooltip="Per edition: recommended seats = 110% of users active in 90 days. Reduce at renewal, or true-up where assigned exceeds purchased.">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left text-slate-600">
-            <thead className="text-xs uppercase bg-slate-50 text-slate-500 border-b border-slate-200"><tr>
-              {['Product / edition', 'Purchased', 'Assigned', 'Active 90 d', 'Recommended', 'Reduce by', 'Saving / yr', 'True-up / yr', 'Renewal', 'Action'].map((h, i) => (
-                <th key={h} scope="col" className={`px-4 py-2.5 font-semibold whitespace-nowrap ${i > 0 && i < 8 ? 'text-right' : ''}`}>{h}</th>))}
-            </tr></thead>
-            <tbody className="tabular-nums whitespace-nowrap">
-              {(optimisation.data ?? []).map((o) => (
-                <tr key={`${o.software_id}-${o.edition}`} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="px-4 py-2.5"><button type="button" onClick={() => open.product(o.software_id, 'Usage')} className="text-left font-medium text-slate-900 hover:text-sky-700 focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">{o.software_name}</button><span className="block text-xs text-slate-500">{o.edition}</span></td>
-                  <td className="px-4 py-2.5 text-right">{formatNumber(o.purchased)}</td>
-                  <td className={`px-4 py-2.5 text-right ${o.assigned > o.purchased ? 'text-red-700 font-semibold' : ''}`}>{formatNumber(o.assigned)}</td>
-                  <td className="px-4 py-2.5 text-right">{formatNumber(o.active90)}</td>
-                  <td className="px-4 py-2.5 text-right">{formatNumber(o.recommended)}</td>
-                  <td className="px-4 py-2.5 text-right">{o.reduction ? formatNumber(o.reduction) : '—'}</td>
-                  <td className={`px-4 py-2.5 text-right ${o.annual_saving > 0 ? 'text-green-800 font-semibold' : ''}`}>{o.annual_saving > 0 ? formatINR(o.annual_saving) : '—'}</td>
-                  <td className={`px-4 py-2.5 text-right ${o.trueup_cost > 0 ? 'text-red-700 font-semibold' : ''}`}>{o.trueup_cost > 0 ? formatINR(o.trueup_cost) : '—'}</td>
-                  <td className="px-4 py-2.5">{formatDate(o.end_date)}<span className="block text-xs text-slate-500">notice {formatDate(o.notice_deadline)}</span></td>
-                  <td className="px-4 py-2.5">{o.action}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </Panel>
 
       <Panel title={`Reclaim candidates${dept ? ` · ${dept}` : ''}`} flush
