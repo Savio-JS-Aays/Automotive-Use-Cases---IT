@@ -23,13 +23,11 @@ The pre-redesign catalogue (hash-named apps, random Security/Licensing data, unb
 | Module | KPI | Formula | Source |
 |---|---|---|---|
 | Overview | Scorecard ×5 | Reliability = % services meeting SLO · Change = 100 × (1 − CFR) · Security = patch-SLA compliance · Cost = licence utilisation · Data = min(pipeline success, telemetry completeness) | `it_ops_overview` |
-| Overview | SLO Attainment | services with availability ≥ SLO ÷ services | `it_ops_service_stats` |
-| Overview | Error Budget Remaining | portfolio 1 − Σ downtime ÷ Σ allowed | same |
-| Overview | P1 Incidents / Open Incidents | counts (region filter) | `fact_incidents` |
+| Overview | P1 Incidents (open now in sub) | counts; follow Region + Overview Vertical / Service filters | `it_ops_incidents` (browser-filtered) |
 | Overview | Median Time to Resolve | median MTTR, resolved incidents opened in window | `fact_incidents` |
 | Overview | Cost of Downtime | Σ downtime min × `cost_of_downtime_inr_per_min` | `it_dim_service` |
 | Overview | Licence ACV / Shelfware | from `it_lic_kpis` | licensing tables |
-| Reliability | Availability, Error Budget, 7-d Burn, MTTA, MTTR, Alert Noise, Cost of Downtime, p95 breach days, Incidents | as defined above; p95 breach = service-days with daily p95 > `slo_latency_p95_ms` | `it_rel_overview` |
+| Reliability | Availability (avg across services), MTTA, MTTR, Alert Noise, Cost of Downtime, Incidents | as defined above (SLO KPIs removed 2026-10-07) | `it_rel_overview` |
 | Change | Deployment Frequency | deployments ÷ days | `it_chg_overview` |
 | Change | Change Failure Rate | failed ÷ deployments (target 15%) | same |
 | Change | Failed Deploy Recovery | median(rollback time, else caused-incident resolution − deploy time) | same + bridge |
@@ -46,9 +44,9 @@ The pre-redesign catalogue (hash-named apps, random Security/Licensing data, unb
 | Module | Visual | Drill-down |
 |---|---|---|
 | Overview | Service × day availability heatmap · Top risks list | cell → that day's incidents → incident drawer; risk → owning module, pre-filtered |
-| Reliability | SLO table · daily availability · daily p95 · resolve time by priority (box + median + target) · alert → incident funnel · incidents table | row → service focus; incident → drawer (lifecycle, alerts, causing deployment) |
-| Change | Deployment calendar (weekday × week) · CFR by type · CFR by service · deployments table | day → table filter; service bar → focus; caused incident chip → drawer |
-| Security | 5 × 5 risk matrix · register · vulnerability ageing (stacked by age) · by asset class · threat small multiples · phishing trend · incidents by vector · open-vulnerability table | matrix cell → register filter |
+| Reliability | daily availability and daily p95 (each with its own service filter, compare up to 3) · time to resolve (median bars; group by priority/service/root cause; service and priority filters) · alert → incident funnel · incidents table | incident → drawer (lifecycle, alerts, causing deployment) |
+| Change | Deployment calendar (weekday × week, counts + failed-day dots, weekday/week totals) · CFR by service stacked by change type (type toggle) · deployments per week (successful vs failed) · deployments table (date range, type, failed-only filters) | day / week → table filter; service bar → focus; caused incident chip → drawer |
+| Security | vulnerability ageing (stacked by age) · by asset class · threat small multiples · phishing trend · incidents by vector · open-vulnerability table | |
 | Licensing | see module doc; product drawer now has a **Risk** tab (services, incidents, open vulnerabilities of that product via `it_lic_product_risk`) | |
 
 All charts: one y-axis, validated palette (`src/lib/chartTheme.js`), status colours always with a label or icon, CSV export on the main tables.

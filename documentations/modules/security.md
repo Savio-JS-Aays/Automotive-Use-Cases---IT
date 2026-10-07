@@ -1,6 +1,6 @@
 # Module — Security
 
-- **Route:** `/security` (`?risk=4-5` filters the register to a matrix cell)
+- **Route:** `/security`
 - **Code:** `src/modules/security/SecurityModule.jsx`
 - **Data:** `it_sec_overview`, `it_sec_vulns` (migration 007) over the new tables from migration 006. Replaces the old `Math.random()` page.
 - **Region:** security incidents and OT/network vulnerabilities carry a region; vulnerabilities without one count in every region.
@@ -23,10 +23,11 @@ Open critical (and high) · Past patch SLA (critical/high open beyond due date) 
 
 ## Visuals
 
+The risk matrix and risk register were removed from this page on 2026-10-07 at the user's request. `it_fact_security_risk` and the `risks` field of `it_sec_overview` still exist; the Executive Overview's *Top risks* list still includes register items with a score of 16 or more.
+
+
 | Visual | Detail |
 |---|---|
-| Risk matrix | 5 × 5 likelihood × impact; cell colour = band (L × I: Low < 5, Medium 5–9, High 10–14, Critical ≥ 15) and a count; select a cell to filter the register |
-| Risk register | title, band and score, owner, status, review date, treatment |
 | Open vulnerabilities by age | stacked bars per severity by age band (0–15, 16–30, 31–60, 61–90, 90+ days; ordinal blue), past-SLA counts beneath |
 | By asset class | open, past SLA, average days to close critical/high |
 | Threats by vector | small multiples: weekly detections per vector (complete 7-day buckets ending at the as-of date), totals and block rate |

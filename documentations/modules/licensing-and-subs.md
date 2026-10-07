@@ -34,19 +34,55 @@ Rethought 2026-10-01 as a six-page suite that is the centre of the IT app. Docum
 KPIs: Annual Contract Value · FY spend to date vs budget (+ forecast) · Utilisation · Shelfware · Savings at renewal (12 mo) · Renewals in 90 d (+ decisions due, uplift exposure) · True-up risk · Cost per active user. Action cards (decisions due, disputed/overdue invoices, critical documentation gaps) · value-for-money matrix · renewal timeline · spend by category · top savings at renewal · documentation gaps · subscription register (CSV).
 
 ### Spend & Budget
-KPIs: spend to date · **full-year forecast vs FY budget** · growth vs last year · monthly run-rate · invoices due · invoices held up. Visuals: spend vs budget (monthly / cumulative + forecast; click a month for its products) · this FY vs last FY by month · **vendor Pareto** (bars on one ₹ axis, cumulative share as labels) · spend vs budget by vertical (click filters the suite) · spend by region. Tables: **budget variance by product** (forecast vs budget, YoY; CSV) · **invoice register** (status chips, invoice **PDF** and contract links, status filter, CSV).
+KPIs: spend to date · **full-year forecast vs FY budget** · growth vs last year · monthly run-rate · invoices due · invoices held up. Visuals (reworked 2026-10-07):
+- **Spend vs budget**: monthly or cumulative with a forecast. Click a month to see its products.
+- **This year vs last year** (`charts/YearOnYear.jsx`), with three views:
+  - *Change vs last FY* (default): this FY minus the same month last FY in ₹, bars from zero with the % change labelled. Blue means more spend, green means less.
+  - *Monthly*: both years side by side.
+  - *Cumulative*: running totals.
+  - A summary line shows FY to date vs the same months last year and the biggest jump.
+- **Where the money goes** (`charts/SpendBreakdown.jsx`): replaces the vendor Pareto, spend by vertical and spend by region charts.
+  - Actual vs budget bars on one ₹ axis, with the variance in a right-hand column (red "over" when above budget).
+  - Break down by: Vendor / Vertical / Category / Product / Region.
+  - Measure: FY to date or full-year forecast vs FY budget. Forecast is disabled for Region because it isn't split by region.
+  - Sort: highest spend / most over budget / name. Show: top 5 / top 8 / all, with the rest folded into "Other (n)". An "Over budget only" checkbox.
+  - A summary line shows the total, the variance and how many items are over budget.
+  - Click: vendor or product opens its drawer, vertical or category sets the suite filter, region sets the global Region.
+  - Data: `it_lic_budget_variance` aggregated in the browser; regions and vendor ids come from `it_lic_spend_breakdown`. Tables: **budget variance by product** (forecast vs budget, YoY; CSV) · **invoice register** (status chips, invoice **PDF** and contract links, status filter, CSV).
 
 ### Usage & Optimisation
-KPIs: utilisation · active users · dormant seats · unassigned seats · reclaimable now · saving at renewal · true-up risk · cost per active user. Visuals: seat funnel · utilisation trend · **utilisation heatmap product × month** · **product × region heatmap** (cells open the product) · seats by department (active / inactive / dormant; click filters the reclaim list). Tables: **optimisation opportunities** (per edition: recommended seats = ⌈active 90 d × 1.1⌉, reduction, saving at renewal, true-up, action; CSV) · reclaim candidates (CSV).
+KPIs: utilisation · active users · dormant seats · unassigned seats · reclaimable now · saving at renewal · true-up risk · cost per active user. Visuals (reworked 2026-10-07):
+- **Seat funnel**.
+- **Utilisation trend**: the filtered portfolio plus two compare slots.
+  - Each slot has a fixed colour. Clearing one no longer moves the other into its place (the old bug).
+  - The same product can't be picked in both slots.
+  - A pick excluded by the page filters drops to None for that slot only.
+  - "Least utilised" resets both slots; a 6 m / 12 m / All toggle sets the range.
+- **Utilisation heatmap** (`charts/UtilisationHeatmap.jsx`): combines the two old heatmaps.
+  - View: by month or by region (latest month).
+  - Filters: month range (month view), products (all / below the 85% target / 1,000+ seats), sort (least utilised / biggest 12-month fall / most seats / name) and a product search.
+  - Row labels show the latest utilisation. A cell opens the product.
+- **Seats by department** (`charts/DepartmentSeats.jsx`): active / inactive / dormant seats.
+  - Filters: product (refetches `it_lic_department_usage` with `p_filters.software`), seats or % of assigned, sort (dormant cost / dormant seats / dormant % / assigned), top 12 / 25 / all, and "Hide company-wide pools" (All Employees, All Endpoints).
+  - A summary line shows dormant seats and ₹/yr; the tooltip gives the full breakdown.
+  - A bar filters the reclaim list; clicking the selected department again clears it. Tables: **optimisation opportunities** (per edition: recommended seats = ⌈active 90 d × 1.1⌉, reduction, saving at renewal, true-up, action; CSV) · reclaim candidates (CSV).
 
 ### Renewals & Contracts
 KPIs: renewals in 90 d · decisions due ≤ 30 d · renewals in 12 months · **uplift exposure** (quote, else uplift cap) · quotes awaiting signature · auto-renew share. Visuals: renewal timeline (12 / 24 months) · renewal value by quarter (by recommended action) · uplift exposure by contract. Tables: **decision queue** (notice deadline, quote vs current, uplift, utilisation, action, **Quote PDF**) · **contract register** including expired contracts and the renewal chain (← predecessor / → successor).
 
 ### Vendors
-KPIs: vendors · top-3 concentration · high-risk vendor spend · vendors needing attention · vendors without certifications. Visuals: vendor spend concentration · risk tier × contract-value grid (vendor names are links) · certification coverage. Table: **vendor register** (risk, products, annual value and share, FY spend, next renewal, payment terms, security-assessment status, documents).
+KPIs: vendors · top-3 concentration · high-risk vendor spend · vendors needing attention · vendors without certifications. Visuals: vendor spend concentration · certification coverage (the risk tier × contract-value grid was removed on 2026-10-07). Table: **vendor register** (risk, products, annual value and share, FY spend, next renewal, payment terms, security-assessment status, documents).
 
 ### Documents & Compliance
-KPIs: documents · % fully documented · unsigned MSAs · SaaS without DPA · quotes awaiting signature · assessments needing action · disputed/overdue invoices · open gaps. Visuals: **coverage matrix** — every active contract × MSA, Order Form, SLA, DPA, SOW, Renewal Quote, Invoices and Vendor assessment; each cell is an icon + a word (Signed / Unsigned / Awaiting / Missing / n/a) and links to the PDF or the gap. Lists: **gaps to chase** (most severe first) · **document library** (search; type and status filters; preview / open / download; chips to the product, contract and vendor).
+KPIs: documents · % fully documented · unsigned MSAs · SaaS without DPA · quotes awaiting signature · assessments needing action · disputed/overdue invoices · open gaps. Visuals: **coverage matrix** — every active contract × MSA, Order Form, SLA, DPA, SOW, Renewal Quote, Invoices and Vendor assessment; each cell is an icon + a word (Signed / Unsigned / Awaiting / Missing / n/a) and links to the PDF or the gap. Gaps (`tables/GapsExplorer.jsx`, added 2026-10-07):
+- Data: `it_lic_doc_gaps`, with vendor names from `it_lic_vendors` and product names from the coverage rows.
+- Two charts, both stacked critical (red) / warning (amber) and labelled in the legend:
+  - **Gaps by type**: what is missing.
+  - **Who to chase**: by vendor or by product (vendor-level items such as security assessments group as "Vendor-level").
+- Clicking a bar drills into the **Gaps to chase** table below; clicking it again clears the filter. The two charts cross-filter each other.
+- The table has removable filter chips, a severity toggle, "n of N" and CSV export. Columns: severity (icon + word), gap, item and note, vendor, and actions (Document PDF, Contract drawer, Vendor drawer).
+
+Lists: **document library** (search; type and status filters; preview / open / download; chips to the product, contract and vendor).
 
 ## Drawers
 
@@ -89,4 +125,4 @@ KPIs: documents · % fully documented · unsigned MSAs · SaaS without DPA · qu
 | Keyloop: unsigned MSA draft, 3 invoices disputed, security assessment expired Aug-26, no certifications | coverage matrix, gaps, vendor drawer, invoice register |
 | Oracle TMS: Jun-26 invoice overdue (PO reconciliation); assessment expiring in 46 d | invoice register, coverage matrix |
 | Zendesk (SaaS) has no DPA; Autodesk and Zendesk have no vendor assessment | gaps, coverage matrix |
-| Manufacturing budgeted ~6% below run-rate (+10.2% over) | spend by vertical |
+| Manufacturing budgeted ~6% below run-rate (+10.2% over) | Where the money goes → Vertical (over-budget variance) |

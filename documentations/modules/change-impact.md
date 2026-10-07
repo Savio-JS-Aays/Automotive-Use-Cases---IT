@@ -1,8 +1,8 @@
 # Module — Change Impact (DORA)
 
-- **Route:** `/change-impact` (`?service=`, `?day=YYYY-MM-DD`, `?failed=1`, `?incident=`)
+- **Route:** `/change-impact` (`?service=`, `?from=` / `?to=` YYYY-MM-DD, `?type=`, `?failed=1`, `?incident=`; the old `?day=` still works as from = to)
 - **Code:** `src/modules/change/ChangeModule.jsx`
-- **Data:** `it_chg_overview`, `it_chg_deployments`, `it_ops_incident_detail` (migration 007). Deployments are global; the change-incident share follows the Region filter.
+- **Data:** `it_chg_overview` (KPIs, calendar), `it_chg_deployments` (fetched once per window with `p_limit` 2000 — ≤ ~270 rows at 90 days — and filtered/aggregated in the browser for the CFR chart, the weekly trend and the table), `it_ops_incident_detail` (migration 007). Deployments are global; the change-incident share follows the Region filter.
 
 ## How change and incidents are linked
 
@@ -19,14 +19,14 @@
 | Rollback Rate | rollbacks ÷ deployments |
 | Change-Induced Incidents | incidents with root cause Change ÷ incidents |
 
-## Visuals
+## Visuals (reworked 2026-10-07)
 
 | Visual | Detail |
 |---|---|
-| Deployment calendar | weekday × week heatmap of deployments per day (blue ordinal ramp; dashed cells are outside the window); tooltip shows failures and caused incidents; select a day to filter the table |
-| CFR by type | Code / Config / Infra bars with the target line; bars above target highlighted |
-| CFR by service | same; select a bar to focus the page on that service |
-| Deployments table | time, service, type, status (failed → rolled back / fixed forward), PRs, lead time, caused incidents as chips → incident drawer; "Failed only" toggle |
+| Deployment calendar | GitHub-style grid: one column per week (Mon start, month shown in the header), one row per weekday. Each day is a rounded square with its deployment count (rollbacks excluded) on a neutral → blue ramp (none, 1, 2–3, 4–5, 6+); a red dot marks a day with a failed deployment; dashed = outside the window. Summary line (deployments, failed, incidents caused, busiest weekday), per-weekday totals as small bars on the right, week totals underneath, and a hover/focus detail line. Click a day → table filtered to that day (click again to clear). |
+| Change failure rate by service and type | Replaces the two separate CFR-by-type and CFR-by-service charts. One horizontal bar per service plus an *All services* row, sorted by CFR, target line at 15%. **All types:** bars stacked by change type (Code / Config / Infra), segment = failed of that type ÷ all the service's deployments, so segments add up to the service CFR. **One type:** that type's own CFR per service. Value + failed/deployments on the right axis; tooltip breaks down each type. Bar → focus the page on that service. |
+| Deployments per week (per day for ≤ 14-day windows) | Stacked columns: successful vs failed (rollbacks in the tooltip, with the period's CFR). Shows release waves (Aug-2026 Dealer Portal) and whether failures rise with volume. Bar → table filtered to that week. |
+| Deployments table | Filters: **From / To date** (bounded by the window), **Type** (Code, Config, Infra, Rollback), Failed only, Clear filters; "n of N" count; CSV export of the filtered rows. Columns: time, service, type (colour dot matches the CFR chart), status (failed → rolled back / fixed forward), PRs, lead time, caused incidents as chips → incident drawer. |
 
 ## Story in the data
 

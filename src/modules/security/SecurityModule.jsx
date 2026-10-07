@@ -7,7 +7,6 @@ import Sparkline from '../../components/Sparkline';
 import LoadError from '../../components/LoadError';
 import { useRpc } from '../../hooks/useRpc';
 import { useItFilters } from '../../hooks/useItFilters';
-import { useUrlParam } from '../../hooks/useUrlParam';
 import { INK, SERIES, axisTick, gridProps, tooltipStyle } from '../../lib/chartTheme';
 import { formatDate, formatNumber, formatPct, formatSignedPct } from '../../lib/format';
 
@@ -16,56 +15,9 @@ const AGE_STEPS = ['#86b6ef', '#3987e5', '#256abf', '#184f95', '#0d366b'];
 const AGE_KEYS = [['d0_15', '0–15 d'], ['d16_30', '16–30 d'], ['d31_60', '31–60 d'], ['d61_90', '61–90 d'], ['d90_plus', '90+ d']];
 const SEV_TEXT = { Critical: 'text-red-700', High: 'text-amber-700', Medium: 'text-slate-700', Low: 'text-slate-500' };
 
-function riskBand(score) {
-  if (score >= 15) return { label: 'Critical', bg: '#f6c9c9', text: 'text-red-900' };
-  if (score >= 10) return { label: 'High', bg: '#f9dccb', text: 'text-orange-900' };
-  if (score >= 5) return { label: 'Medium', bg: '#fdf0cf', text: 'text-amber-900' };
-  return { label: 'Low', bg: '#f0efec', text: 'text-slate-700' };
-}
-
-function RiskMatrix({ risks, selected, onSelect }) {
-  const count = (l, i) => risks.filter((r) => r.likelihood === l && r.impact === i).length;
-  return (
-    <div>
-      <div className="flex">
-        <div className="flex w-6 items-center justify-center"><span className="-rotate-90 whitespace-nowrap text-xs text-slate-500">Likelihood →</span></div>
-        <div className="flex-1">
-          <div className="grid grid-cols-[28px_repeat(5,1fr)] gap-1">
-            {[5, 4, 3, 2, 1].map((l) => (
-              <div key={l} className="contents">
-                <div className="flex items-center justify-center text-xs text-slate-500">{l}</div>
-                {[1, 2, 3, 4, 5].map((i) => {
-                  const n = count(l, i);
-                  const band = riskBand(l * i);
-                  const isSel = selected === `${l}-${i}`;
-                  return (
-                    <button key={i} type="button" disabled={!n} onClick={() => onSelect(isSel ? null : `${l}-${i}`)}
-                      aria-label={`Likelihood ${l}, impact ${i}, ${band.label}: ${n} risk${n === 1 ? '' : 's'}`}
-                      className={`h-12 rounded-md text-sm font-semibold ${band.text} ${isSel ? 'ring-2 ring-slate-800' : ''} enabled:hover:ring-2 enabled:hover:ring-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:cursor-default`}
-                      style={{ background: band.bg }}>
-                      {n || ''}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-            <div />
-            {[1, 2, 3, 4, 5].map((i) => <div key={i} className="text-center text-xs text-slate-500">{i}</div>)}
-          </div>
-          <p className="mt-1 text-center text-xs text-slate-500">Impact →</p>
-        </div>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-600">
-        {[16, 10, 5, 1].map((s) => { const b = riskBand(s); return <span key={b.label} className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded-sm border border-black/5" style={{ background: b.bg }} />{b.label}</span>; })}
-      </div>
-    </div>
-  );
-}
-
 export default function SecurityModule() {
   const filters = useItFilters();
   const { data, loading, error } = useRpc('it_sec_overview', { p_filters: filters });
-  const [cell, setCell] = useUrlParam('risk');
   const [sev, setSev] = useState('All');
   const vulns = useRpc('it_sec_vulns', { p_filters: filters, p_status: 'Open' });
 
@@ -86,8 +38,6 @@ export default function SecurityModule() {
   const show = (v, fmt) => (loading && !data ? '…' : v === null || v === undefined ? '—' : fmt(v));
   const rel = (c, p) => (c != null && p ? c / p - 1 : null);
   const pts = (c, p) => (c != null && p != null ? c - p : null);
-  const risks = data?.risks ?? [];
-  const shownRisks = cell ? risks.filter((r) => `${r.likelihood}-${r.impact}` === cell) : risks;
   const aging = (data?.aging ?? []).map((a) => ({ ...a }));
   const vulnRows = (vulns.data ?? []).filter((v) => sev === 'All' || v.severity === sev);
   const phishing = (data?.phishing ?? []).map((p) => ({ ...p, label: new Date(p.month).toLocaleDateString('en-GB', { month: 'short', year: '2-digit' }) }));
@@ -122,30 +72,6 @@ export default function SecurityModule() {
           tooltip="Share of employees who clicked the latest monthly phishing simulation." />
         <KpiCard title="Threats Blocked" icon={<Bug size={20} />} value={show(k.blocked, formatNumber)}
           sub={`block rate ${formatPct(k.block_rate, 2)}`} tooltip="Threats blocked by email, endpoint and network controls in the window." />
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-        <Panel title="Risk matrix" className="xl:col-span-2" tooltip="Risk register by likelihood × impact. Select a cell to filter the register.">
-          <RiskMatrix risks={risks} selected={cell} onSelect={setCell} />
-        </Panel>
-        <Panel title={`Risk register${cell ? ` · L${cell.split('-')[0]} × I${cell.split('-')[1]}` : ''}`} className="xl:col-span-3" flush
-          actions={cell && <button type="button" onClick={() => setCell(null)} className="text-xs font-medium text-sky-700 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">Show all</button>}>
-          <ul className="divide-y divide-slate-100 max-h-96 overflow-y-auto">
-            {shownRisks.map((r) => {
-              const band = riskBand(r.likelihood * r.impact);
-              return (
-                <li key={r.risk_id} className="px-4 sm:px-5 py-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-medium text-slate-900">{r.title}</p>
-                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${band.text}`} style={{ background: band.bg }}>{band.label} · {r.likelihood * r.impact}</span>
-                  </div>
-                  <p className="mt-0.5 text-xs text-slate-500">{r.risk_id} · {r.category} · {r.owner} · {r.status} · review {formatDate(r.review_date)}</p>
-                  <p className="mt-0.5 text-xs text-slate-600">Treatment: {r.treatment}</p>
-                </li>
-              );
-            })}
-          </ul>
-        </Panel>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

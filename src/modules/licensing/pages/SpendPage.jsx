@@ -1,15 +1,15 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Bar, BarChart, CartesianGrid, LabelList, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CalendarRange, Gauge, HandCoins, ReceiptIndianRupee, TrendingUp, Wallet } from 'lucide-react';
 import KpiCard from '../../../components/KpiCard';
 import Panel from '../../../components/Panel';
 import { useRpc } from '../../../hooks/useRpc';
-import { formatINR, formatINRAxis, formatMonth, formatPct, formatSignedPct } from '../../../lib/format';
+import { formatINR, formatMonth, formatSignedPct } from '../../../lib/format';
+import { useGlobalStore } from '../../../store/useGlobalStore';
 import { downloadCsv } from '../../../lib/csv';
-import { INK, SERIES, axisTick, gridProps, tooltipStyle } from '../../../lib/chartTheme';
 import SpendVsBudget from '../charts/SpendVsBudget';
-import SpendByVertical from '../charts/SpendByVertical';
+import YearOnYear from '../charts/YearOnYear';
+import SpendBreakdown from '../charts/SpendBreakdown';
 import InvoiceTable from '../tables/InvoiceTable';
 import { useLicensing } from '../LicensingContext';
 
@@ -18,9 +18,9 @@ export default function SpendPage() {
   const { filters, kpis, meta, open, params, patch } = useLicensing();
   const month = params.get('month');
   const location = useLocation();
+  const setRegion = useGlobalStore((st) => st.setGlobalFilter);
   const spend = useRpc('it_lic_spend_monthly', { p_filters: filters });
   const breakdown = useRpc('it_lic_spend_breakdown', { p_filters: filters });
-  const portfolio = useRpc('it_lic_portfolio', { p_filters: filters });
   const variance = useRpc('it_lic_budget_variance', { p_filters: filters });
   const invoices = useRpc('it_lic_invoices', { p_filters: filters });
   const monthLines = useRpc('it_lic_spend_month', { p_filters: filters, p_month: month }, Boolean(month));
@@ -32,8 +32,6 @@ export default function SpendPage() {
   const k = kpis.data ?? {};
   const show = (v, fmt) => (kpis.loading && !kpis.data ? '…' : v === null || v === undefined ? '—' : fmt(v));
   const forecastVar = k.fy_budget ? k.fy_forecast / k.fy_budget - 1 : null;
-  const yoy = useMemo(() => (breakdown.data?.yoy ?? []).map((r) => ({ ...r, label: formatMonth(r.month) })), [breakdown.data]);
-  const vendors = (breakdown.data?.by_vendor ?? []).map((v) => ({ ...v, cumLabel: formatPct(v.cum_share, 0) }));
 
   return (
     <div className="space-y-6">
@@ -94,55 +92,22 @@ export default function SpendPage() {
             </div>
           )}
         </Panel>
-        <Panel title="This year vs last year" tooltip="Monthly actual spend this fiscal year against the same month of the previous fiscal year.">
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={yoy} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
-                <CartesianGrid {...gridProps} />
-                <XAxis dataKey="label" tick={axisTick} tickLine={false} axisLine={{ stroke: INK.axis }} />
-                <YAxis tickFormatter={formatINRAxis} tick={axisTick} tickLine={false} axisLine={false} width={64} />
-                <Tooltip formatter={(v, n) => [formatINR(v), n]} {...tooltipStyle} />
-                <Legend wrapperStyle={{ fontSize: 12, color: INK.secondary }} />
-                <Line dataKey="last_fy" name="Last FY" stroke={INK.muted} strokeWidth={2} strokeDasharray="5 4" dot={false} />
-                <Line dataKey="this_fy" name="This FY" stroke={SERIES[0]} strokeWidth={2} dot={{ r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+        <Panel title="This year vs last year" tooltip="This fiscal year against the previous one. Change view: this FY minus the same month last FY, with the % change on each bar. Monthly: both years side by side. Cumulative: running totals.">
+          {breakdown.loading && !breakdown.data ? <p className="h-72 text-sm text-slate-500">Loading…</p> : <YearOnYear yoy={breakdown.data?.yoy ?? []} />}
         </Panel>
-        <Panel title="Spend by vendor · FY to date" tooltip="Pareto: vendors ranked by spend; the label shows the cumulative share. One INR axis. Select a vendor for its drill-down.">
-          <div style={{ height: Math.max(240, vendors.length * 28 + 40) }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={vendors} layout="vertical" margin={{ top: 4, right: 56, left: 8, bottom: 0 }}>
-                <CartesianGrid stroke={INK.grid} horizontal={false} />
-                <XAxis type="number" tickFormatter={formatINRAxis} tick={axisTick} tickLine={false} axisLine={false} />
-                <YAxis type="category" dataKey="vendor_name" width={140} tick={{ fontSize: 12, fill: INK.secondary }} tickLine={false} axisLine={{ stroke: INK.axis }} />
-                <Tooltip formatter={(v, n, p) => [`${formatINR(v)} (${formatPct(p.payload.share)} · cumulative ${formatPct(p.payload.cum_share)})`, 'Actual']} {...tooltipStyle} cursor={{ fill: '#f1f5f9' }} />
-                <Bar dataKey="actual" fill={SERIES[0]} radius={[0, 4, 4, 0]} maxBarSize={14} cursor="pointer" onClick={(e) => open.vendor((e.payload ?? e).vendor_id)}>
-                  <LabelList dataKey="cumLabel" position="right" fill={INK.muted} fontSize={11} />
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Panel>
-        <div className="space-y-6">
-          <Panel title="Spend vs budget by vertical · FY to date" tooltip="Actual vs budget by owning vertical; select one to filter the suite.">
-            <SpendByVertical portfolio={portfolio.data ?? []} onSelect={(v) => patch({ vertical: v })} />
-          </Panel>
-          <Panel title="Spend by region · FY to date" tooltip="Spend is allocated to regions by seat share.">
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={breakdown.data?.by_region ?? []} margin={{ top: 16, right: 8, left: 4, bottom: 0 }}>
-                  <CartesianGrid {...gridProps} />
-                  <XAxis dataKey="region_name" tick={axisTick} tickLine={false} axisLine={{ stroke: INK.axis }} />
-                  <YAxis tickFormatter={formatINRAxis} tick={axisTick} tickLine={false} axisLine={false} width={56} />
-                  <Tooltip formatter={(v) => [formatINR(v), 'Actual']} {...tooltipStyle} cursor={{ fill: '#f1f5f9' }} />
-                  <Bar dataKey="actual" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={36} label={{ position: 'top', fill: INK.secondary, fontSize: 11, formatter: formatINR }} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </Panel>
-        </div>
       </div>
+
+      <Panel title="Where the money goes" tooltip="Actual vs budget broken down by vendor, vertical, category, product or region; FY to date or full-year forecast (forecast = spend to date + 3-month run-rate × months left). The right-hand column is the variance. Region spend is allocated by seat share.">
+        {variance.loading && !variance.data ? <p className="h-72 text-sm text-slate-500">Loading…</p> : (
+          <SpendBreakdown variance={variance.data ?? []} byRegion={breakdown.data?.by_region ?? []} byVendor={breakdown.data?.by_vendor ?? []}
+            onSelect={(dim, id) => {
+              if (dim === 'vendor') open.vendor(id);
+              else if (dim === 'product') open.product(id, 'Spend');
+              else if (dim === 'region') setRegion('regionId', id);
+              else patch({ [dim]: id });
+            }} />
+        )}
+      </Panel>
 
       <Panel title="Budget variance by product" flush
         actions={<button type="button" disabled={!variance.data?.length} onClick={() => downloadCsv('budget-variance.csv', variance.data, [

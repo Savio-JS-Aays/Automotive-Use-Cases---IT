@@ -4,7 +4,7 @@ import Panel from '../../../components/Panel';
 import { useRpc } from '../../../hooks/useRpc';
 import { formatDate, formatNumber, formatPct } from '../../../lib/format';
 import DocumentList from '../DocumentList';
-import DocGapsList from '../tables/DocGapsList';
+import GapsExplorer from '../tables/GapsExplorer';
 import { useLicensing } from '../LicensingContext';
 
 // Status is always shown as an icon + a text label, never colour alone
@@ -72,7 +72,7 @@ export default function DocumentsPage() {
           sub={`${formatNumber(k.doc_gaps_critical)} critical`} onClick={() => open.docs({ gaps: true })} tooltip="Everything to chase: missing/unsigned documents, quotes, assessments, invoice problems." />
       </div>
 
-      <Panel title="Coverage matrix" tooltip="Every active contract against the documents it needs. Select a cell to open the document; a missing cell opens the gaps list. n/a = not required for this contract (e.g. SOW only for on-prem).">
+      <Panel title="Coverage matrix" tooltip="Every active contract against the documents it needs. Select a cell to open the document; a missing cell opens the gaps library. n/a = not required for this contract (e.g. SOW only for on-prem).">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-sm" aria-label="Document coverage by contract">
             <thead className="text-xs uppercase text-slate-500">
@@ -115,9 +115,7 @@ export default function DocumentsPage() {
         <p className="mt-3 text-xs text-slate-500">Cells show an icon and a word, never colour alone: Signed · Unsigned draft · Awaiting countersignature · Missing · n/a (not required).</p>
       </Panel>
 
-      <Panel title="Gaps to chase" tooltip="Missing or unsigned documents, quotes, vendor assessments and held-up invoices, most severe first.">
-        <DocGapsList />
-      </Panel>
+      <GapsExplorer products={rows} />
 
       <Panel title="Document library" tooltip="Every document with search and filters. Preview inline, open in a new tab, download, or jump to the product, contract or vendor it belongs to." flush>
         <div className="p-4 sm:p-5"><DocumentList withPageFilters pageSize={6} /></div>

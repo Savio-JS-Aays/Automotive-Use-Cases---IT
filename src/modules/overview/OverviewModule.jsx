@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { Activity, AlarmClock, ArrowRight, BadgeIndianRupee, Gauge, Siren, Timer, TrendingDown } from 'lucide-react';
+import { AlarmClock, ArrowRight, BadgeIndianRupee, Siren, Timer, TrendingDown } from 'lucide-react';
 import KpiCard from '../../components/KpiCard';
 import Panel, { PageHeader } from '../../components/Panel';
 import Heatmap from '../../components/Heatmap';
@@ -10,6 +10,7 @@ import Drawer from '../../components/Drawer';
 import IncidentDrawer from '../../components/IncidentDrawer';
 import IncidentsTable from '../../components/IncidentsTable';
 import { useRpc } from '../../hooks/useRpc';
+import { useRawTables } from '../../hooks/useRawTables';
 import { useItFilters } from '../../hooks/useItFilters';
 import { usePatchUrlParams, useUrlParam } from '../../hooks/useUrlParam';
 import { AVAILABILITY_BUCKETS, availabilityColor } from '../../lib/chartTheme';
@@ -17,10 +18,17 @@ import { formatINR, formatNumber, formatPct, formatSignedPct } from '../../lib/f
 
 const shortDate = (d) => new Date(d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 
-function deltaPts(cur, prev) {
-  if (cur === null || cur === undefined || prev === null || prev === undefined) return null;
-  return cur - prev;
-}
+const TABLES = {
+  services: { table: 'it_dim_service', select: 'service_id, short_name, service_name, business_vertical, software_id', options: { orderBy: 'service_id' } },
+  software: { table: 'it_dim_software', select: 'software_id, business_vertical', options: { orderBy: 'software_id' } },
+};
+const median = (xs) => {
+  if (!xs.length) return null;
+  const a = [...xs].sort((x, y) => x - y);
+  const m = Math.floor(a.length / 2);
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+};
+const selectCls = 'mt-1 rounded-md border border-slate-300 bg-white py-1.5 px-2 text-sm font-normal text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500';
 
 export default function OverviewModule() {
   const filters = useItFilters();
@@ -28,7 +36,20 @@ export default function OverviewModule() {
   const [cell, setCell] = useUrlParam('cell');           // "SRV002|2026-09-12"
   const [incident, setIncident] = useUrlParam('incident');
   const patchUrl = usePatchUrlParams();
+  const [vertical] = useUrlParam('vertical');
+  const [service] = useUrlParam('service');
   const [cellService, cellDate] = cell ? cell.split('|') : [null, null];
+  const { data: dims } = useRawTables(TABLES);
+  const allServices = useMemo(() => dims.services ?? [], [dims.services]);
+  const verticals = useMemo(() => [...new Set([...allServices, ...(dims.software ?? [])].map((x) => x.business_vertical))].sort(), [allServices, dims.software]);
+  const svc = allServices.find((x) => x.service_id === service);
+  // Services in scope: the one picked, else every service of the vertical, else all (null)
+  const scope = useMemo(() => (service ? new Set([service]) : vertical ? new Set(allServices.filter((x) => x.business_vertical === vertical).map((x) => x.service_id)) : null), [service, vertical, allServices]);
+  // Incident KPIs are computed from the incident list so they can follow the service / vertical filter
+  const incidents = useRpc('it_ops_incidents', { p_filters: { days: 365, region: filters.region }, p_limit: 5000 });
+  const rel = useRpc('it_rel_overview', { p_filters: filters });
+  const licFilters = service ? { region: filters.region, software: svc?.software_id ?? '__none__' } : { region: filters.region, vertical };
+  const lic = useRpc('it_lic_kpis_ext', { p_filters: licFilters });
   const cellIncidents = useRpc('it_ops_incidents', { p_filters: { ...filters, service: cellService }, p_date: cellDate }, Boolean(cell));
 
   const heat = useMemo(() => {
@@ -36,23 +57,65 @@ export default function OverviewModule() {
     const byKey = new Map(data.heatmap.map((c) => [`${c.service_id}|${c.date}`, c.availability]));
     const dates = [...new Set(data.heatmap.map((c) => c.date))].sort();
     return {
-      rows: data.services.map((s) => ({ key: s.service_id, label: s.short_name })),
+      rows: data.services.filter((s) => !scope || scope.has(s.service_id)).map((s) => ({ key: s.service_id, label: s.short_name })),
       cols: dates.map((d) => ({ key: d, label: shortDate(d) })),
       value: (r, c) => byKey.get(`${r}|${c}`) ?? null,
     };
-  }, [data]);
+  }, [data, scope]);
 
   if (error) return <LoadError error={error} what="the Overview" />;
-  const k = data?.kpis ?? {};
-  const daily = data?.daily ?? [];
-  const show = (v, fmt) => (loading && !data ? '…' : fmt(v));
-  const sloDelta = deltaPts(k.slo_attainment, k.slo_attainment_prev);
-  const mttrDelta = k.mttr_h_prev ? k.mttr_h / k.mttr_h_prev - 1 : null;
-  const p1Delta = k.p1_prev !== undefined ? k.p1 - k.p1_prev : null;
+  const w = data?.window;
+  const inScope = (incidents.data ?? []).filter((i) => !scope || scope.has(i.service_id));
+  const day = (i) => i.open_time.slice(0, 10);
+  const cur = w ? inScope.filter((i) => day(i) >= w.d_from && day(i) <= w.d_to) : [];
+  const prv = w ? inScope.filter((i) => day(i) >= w.p_from && day(i) <= w.p_to) : [];
+  const mttrOf = (xs) => { const m = median(xs.filter((i) => i.status === 'Resolved' && i.mttr_minutes != null).map((i) => i.mttr_minutes)); return m == null ? null : m / 60; };
+  const k = {
+    p1: cur.filter((i) => i.priority === 1).length,
+    p1_prev: prv.filter((i) => i.priority === 1).length,
+    open: inScope.filter((i) => i.status === 'Active').length,
+    open_p1p2: inScope.filter((i) => i.status === 'Active' && i.priority <= 2).length,
+    mttr_h: mttrOf(cur), mttr_h_prev: mttrOf(prv),
+    downtime_cost: (rel.data?.services ?? []).filter((x) => !scope || scope.has(x.service_id)).reduce((t, x) => t + Number(x.downtime_cost || 0), 0),
+  };
+  const lk = service && !svc?.software_id ? {} : lic.data ?? {};
+  const noLicence = Boolean(service && svc && !svc.software_id);
+  const p1p2ByDay = new Map();
+  cur.filter((i) => i.priority <= 2).forEach((i) => p1p2ByDay.set(day(i), (p1p2ByDay.get(day(i)) ?? 0) + 1));
+  const spark = (data?.daily ?? []).map((d) => p1p2ByDay.get(d.date) ?? 0);
+  const busy = (q) => (q.loading && !q.data) || (loading && !data);
+  const show = (q, v, fmt) => (busy(q) ? '…' : v === null || v === undefined ? '—' : fmt(v));
+  const mttrDelta = k.mttr_h != null && k.mttr_h_prev ? k.mttr_h / k.mttr_h_prev - 1 : null;
+  const p1Delta = w ? k.p1 - k.p1_prev : null;
+  const scopeLabel = svc ? svc.short_name : vertical ? `${vertical} (${scope?.size ?? 0} service${scope?.size === 1 ? '' : 's'})` : null;
+  const setVertical = (v) => patchUrl({ vertical: v, service: v && svc && svc.business_vertical !== v ? null : service, cell: null });
+  const serviceOptions = allServices.filter((x) => !vertical || x.business_vertical === vertical);
 
   return (
     <div className="space-y-6 pb-10">
-      <PageHeader title="IT Executive Overview" window={data?.window} />
+      <PageHeader title="IT Executive Overview" window={data?.window}
+        note={scopeLabel ? `KPI cards and the heatmap show ${scopeLabel}; the scorecard and top risks stay portfolio-wide` : null}>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="flex flex-col text-xs font-semibold text-slate-600">
+            Vertical
+            <select value={vertical ?? ''} onChange={(e) => setVertical(e.target.value)} className={`${selectCls} min-w-40`}>
+              <option value="">All verticals</option>
+              {verticals.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col text-xs font-semibold text-slate-600">
+            Service
+            <select value={service ?? ''} onChange={(e) => patchUrl({ service: e.target.value, cell: null })} className={`${selectCls} min-w-48`}>
+              <option value="">{vertical ? `All ${vertical} services` : 'All services'}</option>
+              {serviceOptions.map((x) => <option key={x.service_id} value={x.service_id}>{x.short_name}</option>)}
+            </select>
+          </label>
+          {(vertical || service) && (
+            <button type="button" onClick={() => patchUrl({ vertical: null, service: null, cell: null })}
+              className="mb-1.5 text-sm font-medium text-sky-700 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">Clear</button>
+          )}
+        </div>
+      </PageHeader>
 
       {/* Scorecard */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -69,37 +132,24 @@ export default function OverviewModule() {
         ))}
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <KpiCard title="SLO Attainment" value={show(k.slo_attainment, (v) => formatPct(v, 0))}
-          sub={`${formatNumber(k.services_meeting)} of ${formatNumber(k.services)} services meet their availability SLO`}
-          delta={sloDelta !== null ? `${formatSignedPct(sloDelta, 0, ' pts')} vs prior` : null} deltaTone={sloDelta > 0 ? 'good' : sloDelta < 0 ? 'bad' : 'neutral'}
-          spark={daily.map((d) => d.availability)} icon={<Gauge size={20} />}
-          tooltip="Share of services whose availability in the window is at or above their SLO. The sparkline is portfolio availability per day." />
-        <KpiCard title="Error Budget Remaining" value={show(k.error_budget_remaining, (v) => formatPct(v, 0))}
-          sub="portfolio: 1 − downtime ÷ allowed downtime" deltaTone="bad"
-          delta={k.error_budget_remaining < 0 ? 'Budget overspent' : null} icon={<Activity size={20} />}
-          tooltip="Allowed downtime = (1 − SLO) × minutes in the window, summed over services. Negative = more downtime than the SLOs allow." />
-        <KpiCard title="P1 Incidents" value={show(k.p1, formatNumber)} icon={<Siren size={20} />}
+      {/* KPIs: follow the Vertical / Service filters */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+        <KpiCard title="P1 Incidents" value={show(incidents, k.p1, formatNumber)} icon={<Siren size={20} />}
           delta={p1Delta !== null ? `${p1Delta > 0 ? '+' : ''}${p1Delta} vs prior` : null} deltaTone={p1Delta > 0 ? 'bad' : p1Delta < 0 ? 'good' : 'neutral'}
-          sub={`${formatNumber(k.open_incidents)} open now (${formatNumber(k.open_p1p2)} P1/P2)`}
-          spark={daily.map((d) => d.p1p2)}
-          tooltip="Priority-1 incidents opened in the window. Sparkline: P1+P2 incidents per day." />
-        <KpiCard title="Median Time to Resolve" value={show(k.mttr_h, (v) => (v === null ? '—' : `${v.toFixed(1)} h`))} icon={<Timer size={20} />}
+          sub={`${formatNumber(k.open)} open now (${formatNumber(k.open_p1p2)} P1/P2)`} spark={spark}
+          tooltip="Priority-1 incidents opened in the window (Region, Vertical and Service filters apply). Open now = incidents not yet resolved at the as-of date. Sparkline: P1+P2 incidents per day." />
+        <KpiCard title="Median Time to Resolve" value={show(incidents, k.mttr_h, (v) => `${v.toFixed(1)} h`)} icon={<Timer size={20} />}
           delta={mttrDelta !== null ? `${formatSignedPct(mttrDelta)} vs prior` : null} deltaTone={mttrDelta < 0 ? 'good' : mttrDelta > 0 ? 'bad' : 'neutral'}
           tooltip="Median of (resolution − open) for incidents opened and resolved in the window, all priorities." />
-        <KpiCard title="Cost of Downtime" value={show(k.downtime_cost, formatINR)} icon={<AlarmClock size={20} />}
+        <KpiCard title="Cost of Downtime" value={show(rel, k.downtime_cost, formatINR)} icon={<AlarmClock size={20} />}
           sub="downtime minutes × service cost per minute"
-          tooltip="Σ per service of downtime minutes in the window × that service's cost of downtime per minute (it_dim_service)." />
-        <KpiCard title="Licence Contract Value" value={show(k.acv, formatINR)} icon={<BadgeIndianRupee size={20} />}
-          sub={`utilisation ${formatPct(k.utilisation)}`}
-          tooltip="Annual value of active software contracts (from Licensing & Subscriptions)." />
-        <KpiCard title="Licence Shelfware" value={show(k.shelfware, formatINR)} icon={<TrendingDown size={20} />}
+          tooltip="Σ per service in scope of downtime minutes in the window × that service's cost of downtime per minute (it_dim_service)." />
+        <KpiCard title="Licence Contract Value" value={noLicence ? '—' : show(lic, lk.acv, formatINR)} icon={<BadgeIndianRupee size={20} />}
+          sub={noLicence ? 'in-house service, no licence' : lk.utilisation != null ? `utilisation ${formatPct(lk.utilisation)}` : null}
+          tooltip="Annual value of active software contracts in scope (Licensing & Subscriptions). Vertical = the software's owning vertical; Service = the product behind that service." />
+        <KpiCard title="Licence Shelfware" value={noLicence ? '—' : show(lic, lk.shelfware, formatINR)} icon={<TrendingDown size={20} />}
           sub="annualised cost of unused seats"
-          tooltip="Unassigned + dormant seats × unit price × 12 (from Licensing & Subscriptions)." />
-        <KpiCard title="Open Incidents" value={show(k.open_incidents, formatNumber)} icon={<Siren size={20} />}
-          sub={`${formatNumber(k.open_p1p2)} of them P1/P2`}
-          tooltip="Incidents not yet resolved at the as-of date." />
+          tooltip="Unassigned + dormant seats × unit price × 12 (Licensing & Subscriptions)." />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">

@@ -10,15 +10,9 @@ import { INK, SERIES, STATUS, axisTick, tooltipStyle } from '../../../lib/chartT
 import { useLicensing } from '../LicensingContext';
 
 const RISKS = ['High', 'Medium', 'Low'];
-const BANDS = [
-  { key: 'big', label: '≥ ₹10 Cr', test: (a) => a >= 1e8 },
-  { key: 'mid', label: '₹3–10 Cr', test: (a) => a >= 3e7 && a < 1e8 },
-  { key: 'small', label: '< ₹3 Cr', test: (a) => a < 3e7 },
-];
-const RISK_CELL = { High: '#f6c9c9', Medium: '#fdf0cf', Low: '#f0efec' };
 const ASSESSMENT_TEXT = { valid: 'text-green-800', expiring: 'text-amber-700 font-medium', expired: 'text-red-700 font-semibold', missing: 'text-red-700 font-semibold' };
 
-/** Vendors: concentration, risk, certifications, assessment currency, and a register with a vendor drill-down. */
+/** Vendors: concentration, certifications, assessment currency, and a register with a vendor drill-down. */
 export default function VendorsPage() {
   const { filters, open } = useLicensing();
   const vendors = useRpc('it_lic_vendors', { p_filters: filters });
@@ -45,10 +39,6 @@ export default function VendorsPage() {
       return { ...v, acv_n: Number(v.acv), cumLabel: formatPct(kpi.total ? cum / kpi.total : 0, 0) };
     });
   }, [rows, kpi.total]);
-
-  const grid = useMemo(() => RISKS.map((risk) => ({
-    risk, cells: BANDS.map((b) => ({ ...b, vendors: rows.filter((v) => v.risk_tier === risk && b.test(Number(v.acv ?? 0))) })),
-  })), [rows]);
 
   const certs = useMemo(() => {
     const m = new Map();
@@ -93,32 +83,7 @@ export default function VendorsPage() {
           </div>
         </Panel>
 
-        <div className="space-y-6">
-          <Panel title="Risk tier × contract value" tooltip="Vendors by risk tier and annual contract value band. The shaded cells with vendors in the High row are the ones to watch. Select a vendor name to open it.">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm" aria-label="Vendors by risk tier and value band">
-                <thead><tr><th scope="col" className="w-20" />{BANDS.map((b) => <th key={b.key} scope="col" className="px-2 py-1.5 text-xs font-semibold text-slate-500">{b.label}</th>)}</tr></thead>
-                <tbody>
-                  {grid.map((r) => (
-                    <tr key={r.risk}>
-                      <th scope="row" className="pr-2 text-right text-xs font-semibold text-slate-600">{r.risk}</th>
-                      {r.cells.map((c) => (
-                        <td key={c.key} className="p-1 align-top">
-                          <div className="min-h-[3.5rem] rounded-md p-2" style={{ background: c.vendors.length ? RISK_CELL[r.risk] : '#f8fafc' }}>
-                            {c.vendors.map((v) => (
-                              <button key={v.vendor_id} type="button" onClick={() => open.vendor(v.vendor_id)}
-                                className="mr-1 text-xs font-medium text-slate-800 hover:text-sky-700 hover:underline focus:outline-none focus:ring-2 focus:ring-sky-500 rounded">{v.vendor_name}</button>
-                            ))}
-                            {!c.vendors.length && <span className="text-xs text-slate-300">—</span>}
-                          </div>
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Panel>
+        <div>
           <Panel title="Certification coverage" tooltip="How many vendors hold each certification (a vendor can hold several).">
             <div style={{ height: Math.max(140, certs.length * 30 + 30) }}>
               <ResponsiveContainer width="100%" height="100%">

@@ -1,1 +1,4 @@
 @import "tailwindcss";
+/* Recharts focuses the chart on mouse click; keep the outline for keyboard focus only */
+.recharts-wrapper:focus:not(:focus-visible),
+.recharts-surface:focus:not(:focus-visible) { outline: none; }

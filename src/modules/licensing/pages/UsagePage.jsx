@@ -1,17 +1,14 @@
-import { useMemo } from 'react';
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Armchair, PiggyBank, Scale, UserCheck, UserX, Users } from 'lucide-react';
 import KpiCard from '../../../components/KpiCard';
 import Panel from '../../../components/Panel';
-import Heatmap from '../../../components/Heatmap';
 import { useRpc } from '../../../hooks/useRpc';
-import { formatDate, formatINR, formatMonth, formatNumber, formatPct, formatSignedPct } from '../../../lib/format';
+import { formatDate, formatINR, formatNumber, formatPct, formatSignedPct } from '../../../lib/format';
 import { downloadCsv } from '../../../lib/csv';
-import { INK, SERIES, STATUS, axisTick, tooltipStyle } from '../../../lib/chartTheme';
 import SeatFunnel from '../charts/SeatFunnel';
 import UtilisationTrend from '../charts/UtilisationTrend';
 import ReclaimTable from '../tables/ReclaimTable';
-import { UTIL_BUCKETS, utilColor } from '../constants';
+import UtilisationHeatmap from '../charts/UtilisationHeatmap';
+import DepartmentSeats from '../charts/DepartmentSeats';
 import { useLicensing } from '../LicensingContext';
 
 /** Usage & Optimisation: who uses what, where seats are wasted, and what to cut or true-up at renewal. */
@@ -32,26 +29,6 @@ export default function UsagePage() {
   const unassigned = rows.reduce((s, r) => s + Math.max(0, r.purchased - r.assigned), 0);
   const dormant = (depts.data ?? []).reduce((s, d) => s + d.dormant, 0);
   const utilDelta = k.utilisation != null && k.utilisation_prev != null ? k.utilisation - k.utilisation_prev : null;
-
-  const heat = useMemo(() => {
-    const cells = matrix.data?.by_month ?? [];
-    const months = [...new Set(cells.map((c) => c.month))].sort();
-    const last = months[months.length - 1];
-    const byKey = new Map(cells.map((c) => [`${c.software_id}|${c.month}`, c]));
-    const products = [...new Map(cells.map((c) => [c.software_id, c.short_name])).entries()]
-      .map(([id, name]) => ({ key: id, label: name, util: byKey.get(`${id}|${last}`)?.util ?? 1 }))
-      .sort((a, b) => a.util - b.util);
-    const regionCells = matrix.data?.by_region ?? [];
-    const regions = [...new Map(regionCells.map((c) => [c.region_id, c.region_name])).entries()].map(([key, label]) => ({ key, label }));
-    const byRegion = new Map(regionCells.map((c) => [`${c.software_id}|${c.region_id}`, c]));
-    return {
-      products, byKey, byRegion, regions,
-      months: months.map((m) => ({ key: m, label: formatMonth(m) })),
-    };
-  }, [matrix.data]);
-
-  const deptRows = (depts.data ?? []).map((d) => ({ ...d, inactive: Math.max(0, d.assigned - d.active30 - d.dormant) })).sort((a, b) => b.dormant_cost - a.dormant_cost).slice(0, 12);
-  const legend = UTIL_BUCKETS.map((b) => ({ label: b.label, color: b.color }));
 
   return (
     <div className="space-y-6">
@@ -84,43 +61,13 @@ export default function UsagePage() {
         </Panel>
       </div>
 
-      <Panel title="Utilisation by product and month" tooltip="Active-30-day ÷ purchased seats for every product and month, least utilised first. Neutral = at or above the 85% target. Select a cell to open the product.">
-        {heat.products.length ? (
-          <Heatmap rows={heat.products} cols={heat.months} rowLabelWidth={100}
-            value={(r, c) => heat.byKey.get(`${r}|${c}`)?.util ?? null}
-            colorFor={utilColor}
-            titleFor={(r, c, v) => { const x = heat.byKey.get(`${r.key}|${c.key}`); return `${r.label} · ${c.label}: ${v == null ? 'no data' : `${formatPct(v)} (${formatNumber(x.active30)} of ${formatNumber(x.purchased)})`}`; }}
-            onCell={(r) => open.product(r.key, 'Usage')} legend={legend} />
-        ) : <p className="text-sm text-slate-500">Loading…</p>}
+      <Panel title="Utilisation heatmap" tooltip="Active-30-day ÷ purchased seats. By month: every product and month (trend). By region: where each product's seats are used in the latest month. The % after each product is its latest utilisation. Neutral = at or above the 85% target; darker orange = lower. Select a cell to open the product.">
+        <UtilisationHeatmap byMonth={matrix.data?.by_month ?? []} byRegion={matrix.data?.by_region ?? []} target={meta.target ?? 0.85} onProduct={(id) => open.product(id, 'Usage')} />
       </Panel>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        <Panel title="Utilisation by product and region · latest month" tooltip="Where each product's seats are used. Select a cell to open the product.">
-          {heat.regions.length ? (
-            <Heatmap rows={heat.products} cols={heat.regions} rowLabelWidth={100} minWidth={380}
-              value={(r, c) => heat.byRegion.get(`${r}|${c}`)?.util ?? null}
-              colorFor={utilColor}
-              titleFor={(r, c, v) => { const x = heat.byRegion.get(`${r.key}|${c.key}`); return `${r.label} · ${c.label}: ${v == null ? 'no seats' : `${formatPct(v)} (${formatNumber(x.active30)} of ${formatNumber(x.purchased)})`}`; }}
-              onCell={(r) => open.product(r.key, 'Usage')} legend={legend} />
-          ) : <p className="text-sm text-slate-500">Loading…</p>}
-        </Panel>
-        <Panel title="Seats by department" tooltip="Assigned seats by department: active in 30 days, inactive 30–90 days, dormant 90+ days. Select a department to filter the reclaim list.">
-          <div style={{ height: Math.max(240, deptRows.length * 26 + 60) }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={deptRows} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
-                <CartesianGrid stroke={INK.grid} horizontal={false} />
-                <XAxis type="number" tick={axisTick} tickLine={false} axisLine={false} />
-                <YAxis type="category" dataKey="department" width={150} tick={{ fontSize: 12, fill: INK.secondary }} tickLine={false} axisLine={{ stroke: INK.axis }} />
-                <Tooltip {...tooltipStyle} cursor={{ fill: '#f1f5f9' }} formatter={(v, n, p) => [n === 'Dormant 90 d+' ? `${formatNumber(v)} (${formatINR(p.payload.dormant_cost)}/yr)` : formatNumber(v), n]} />
-                <Legend wrapperStyle={{ fontSize: 12, color: INK.secondary }} />
-                <Bar dataKey="active30" name="Active 30 d" stackId="d" fill={SERIES[0]} stroke={INK.surface} strokeWidth={1} cursor="pointer" onClick={(e) => patch({ dept: (e.payload ?? e).department })} />
-                <Bar dataKey="inactive" name="Inactive 30–90 d" stackId="d" fill={INK.axis} stroke={INK.surface} strokeWidth={1} cursor="pointer" onClick={(e) => patch({ dept: (e.payload ?? e).department })} />
-                <Bar dataKey="dormant" name="Dormant 90 d+" stackId="d" fill={STATUS.serious} stroke={INK.surface} strokeWidth={1} radius={[0, 4, 4, 0]} cursor="pointer" onClick={(e) => patch({ dept: (e.payload ?? e).department })} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Panel>
-      </div>
+      <Panel title="Seats by department" tooltip="Assigned seats by department: active in 30 days, inactive 30–90 days, dormant 90+ days (with annual cost). Filter by product, switch to % of assigned to compare departments of different size, and hide the company-wide pools. Select a bar to filter the reclaim list.">
+        <DepartmentSeats filters={filters} products={rows} selected={dept} onSelect={(d) => patch({ dept: d === dept ? null : d })} />
+      </Panel>
 
       <Panel title="Optimisation opportunities" flush
         actions={<button type="button" disabled={!optimisation.data?.length} onClick={() => downloadCsv('optimisation.csv', optimisation.data, [
